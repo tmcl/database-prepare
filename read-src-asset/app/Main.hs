@@ -19,27 +19,33 @@ import Data.Either
 import Data.Text.Encoding
 import Data.List
 import Data.Text.IO hiding (putStrLn)
+import Debug.Trace
 
 main :: IO ()
 main = do
   let continueWith dir baretxt = do
         let txt = Data.Text.Encoding.decodeUtf8 dir <> "/" <> baretxt
         let path1 = fromText txt
-        print (path1)
         
         let str = Data.Text.unpack txt
         sql <- Data.Text.IO.readFile str
-        let sqljsonFile = path1 <> ".json"
+        let strSqlJson = str <> ".json"
+        let sqljsonFile = fromText $ Data.Text.pack $ strSqlJson
+        print (path1, sqljsonFile)
         let newSqlJson = Data.Aeson.encode sql
         needsUpdate <- do
           f <- isFile sqljsonFile
+          print f
           if f 
             then do
               oldsqljson <- Data.ByteString.Lazy.readFile (str <> ".json")
-              pure $ oldsqljson /= newSqlJson
-            else pure True
+              let x = oldsqljson /= newSqlJson
+              when x do
+                  Debug.Trace.traceShowM ("needs update because"::String, show oldsqljson, "is different from" :: String, show newSqlJson) 
+              pure x
+            else Debug.Trace.traceShowM ("needs update because"::String, show sqljsonFile, "does not exist" :: String) >> pure True
         when needsUpdate do
-          Data.ByteString.Lazy.writeFile (str <> ".json") newSqlJson
+          Data.ByteString.Lazy.writeFile (strSqlJson) newSqlJson
          
   
   paths <- System.Environment.getArgs
