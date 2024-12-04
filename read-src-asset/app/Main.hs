@@ -6,7 +6,7 @@
 module Main where
 
 import Control.Monad
-import System.INotify
+import System.FSNotify
 import Data.Aeson
 import Data.ByteString.Lazy
 import System.Environment
@@ -16,18 +16,17 @@ import Data.Function
 import Filesystem
 import Filesystem.Path.CurrentOS hiding (directory)
 import Data.Either
-import Data.Text.Encoding
 import Data.List
 import Data.Text.IO hiding (putStrLn)
 import Debug.Trace
 
 main :: IO ()
 main = do
-  let continueWith dir baretxt = do
-        let txt = Data.Text.Encoding.decodeUtf8 dir <> "/" <> baretxt
+  let continueWith txt = do
+        let str = Data.Text.unpack txt
         let path1 = fromText txt
         
-        let str = Data.Text.unpack txt
+        print (str)
         sql <- Data.Text.IO.readFile str
         let strSqlJson = str <> ".json"
         let sqljsonFile = fromText $ Data.Text.pack $ strSqlJson
@@ -56,8 +55,8 @@ main = do
     let path3 = (toText path1) & \case 
           Right r -> r
           Left e -> error (show e)
-    let path2 = encodeUtf8 path3
-    pure (path1, path2, isdir)
+    let path2 = Data.Text.unpack path3
+    pure (path1, path2 :: String, isdir)
   let (others, directories) = partitionEithers $ fmap (\(c, a, b) -> if b then pure (c, a) else Left a) isDirectories
   print directories
   forM_ directories \(directory, directory2) -> do
@@ -65,19 +64,25 @@ main = do
        let dirContentSql = Prelude.filter (Data.List.isSuffixOf ".sql" . encodeString) dirContent
        print dirContentSql
        forM_ dirContentSql \sql -> do
-          continueWith directory2 (either (error . show) id $ toText $ filename sql)
+          let txt = Data.Text.pack directory2  <> "/" <> (either (error . show) id $ toText $ filename sql)
+          continueWith txt
  
   unless (Prelude.null others) do
     print others
     fail "will not continue with non-directories"
-  withINotify \inotify -> do
+  let interestingEvent = \case
+         Added {} -> True
+         Modified {} -> True
+         _ -> False
+  putStrLn "want to watch"       
+  print directories 
+  withManager \inotify -> do
     forM_ directories \(_, directory) -> do
-       addWatch inotify [Modify, CloseWrite, Move, MoveIn, MoveOut, Create, Delete] directory \event -> do
+       watchDir inotify  directory interestingEvent \event -> do
          print event
          putStrLn "hi1" 
-         let fp = fromJust (maybeFilePath event)
-         print $ Data.Text.Encoding.decodeUtf8Lenient fp
-         let txt1 = Data.Text.Encoding.decodeUtf8 fp
+         let fp = eventPath event
+         let txt1 = Data.Text.pack fp
          putStrLn "hi2" 
 
          print (txt1)
@@ -89,7 +94,7 @@ main = do
          when (Data.Text.isSuffixOf ".sql" txt) do
            putStrLn "hi6" 
            print txt
-           continueWith directory txt
+           continueWith txt
           
         
     print =<< getChar
