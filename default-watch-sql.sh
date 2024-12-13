@@ -1,3 +1,3 @@
 #!/usr/bin/env sh
 
-nix run .# -- ../cosm-mobile/cosm/sql
+nix run .# -- ../cosm-mobile/sql
