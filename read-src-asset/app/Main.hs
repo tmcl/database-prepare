@@ -63,7 +63,7 @@ main = do
          print event
          putStrLn "hi1"
          let rawfp = eventPath event
-         case Data.List.stripPrefix cwd rawfp of
+         case Data.List.stripPrefix (cwd <> "/") rawfp of
           Nothing -> pure ()
           Just fp -> do
              let txt1 = Data.Text.pack fp
