@@ -19,7 +19,6 @@ import Data.Either
 import Data.List
 import Data.Text.IO hiding (putStrLn)
 import Debug.Trace
-import Data.String
 
 main :: IO ()
 main = do
@@ -83,6 +82,7 @@ main = do
     print =<< getChar
   
 
+continueWith :: Prelude.FilePath -> Text -> IO ()
 continueWith outPrefix  txt = do
         let str = Data.Text.unpack txt
         let path1 = fromText txt
