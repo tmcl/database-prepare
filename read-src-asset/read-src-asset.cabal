@@ -71,6 +71,7 @@ executable read-src-asset
       , system-fileio
       , system-filepath
       , stm
+      , directory
       , containers
       , time
       , text
