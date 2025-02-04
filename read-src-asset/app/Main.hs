@@ -104,11 +104,14 @@ toTypescript :: SqliteStatement -> Data.ByteString.Lazy.ByteString
 toTypescript stmt = [__i|
     import * as SQLite from 'expo-sqlite';
 
+    export type Params = {#{params}}
+    export type Result = {#{resultTy}}
+
     export function getFirstAsync (db: SQLite.SQLiteDatabase) {
-        return async function (params: {#{params}}) {
+        return async function (params: Params) {
             const stmt = await db.prepareAsync(require(#{tsFilename}));
             try {
-                const result = await stmt.executeAsync<{#{resultTy}}>(params);
+                const result = await stmt.executeAsync<Result>(params);
                 return await result.getFirstAsync();
             } finally {
                 await stmt.finalizeAsync();
@@ -117,10 +120,10 @@ toTypescript stmt = [__i|
     }
 
     export function getAllAsync (db: SQLite.SQLiteDatabase) {
-        return async function (params: {#{params}}) {
+        return async function (params: Params) {
             const stmt = await db.prepareAsync(require(#{tsFilename}));
             try {
-                const result = await stmt.executeAsync<{#{resultTy}}>(params);
+                const result = await stmt.executeAsync<Result>(params);
                 return await result.getAllAsync();
             } finally {
                 await stmt.finalizeAsync();
