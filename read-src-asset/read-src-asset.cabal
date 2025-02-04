@@ -58,10 +58,10 @@ executable read-src-asset
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules: MigrateSchema
 
     -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
+    default-extensions: TypeOperators FlexibleContexts OverloadedStrings
 
     -- Other library packages from which modules are imported.
     build-depends:    base ^>=4.18.2.1
@@ -71,10 +71,14 @@ executable read-src-asset
       , system-fileio
       , system-filepath
       , stm
+      , string-interpolate
       , directory
       , containers
       , time
       , text
+      , direct-sqlite
+      , effectful ^>=2.5.1.0
+      , effectful-core ^>=2.5.1.0
 
     -- Directories containing source files.
     hs-source-dirs:   app

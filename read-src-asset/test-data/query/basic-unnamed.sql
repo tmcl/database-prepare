@@ -1,0 +1,1 @@
+select id, name, max(created_at) from users where id = ?
