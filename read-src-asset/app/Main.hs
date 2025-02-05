@@ -6,18 +6,17 @@
 
 module Main where
 
+import GetSqliteInfo
+
 import Data.String.Interpolate
-import Effectful.Exception
 import Data.Foldable
-import Data.Bifunctor
+import Data.Function
 import Effectful
 import Effectful.Error.Static
-import MigrateSchema
 import Database.SQLite3.Direct
 import System.IO
 import System.Exit
 import Data.Text.Encoding
-import Data.ByteString
 import Control.Monad
 import System.FSNotify
 import Data.Aeson
@@ -69,7 +68,7 @@ worker = do
        let dirContentSql = Prelude.filter (Data.List.isSuffixOf ".sql" . encodeString) dirContent
        forM_ dirContentSql \sql -> do
           let txt = dir  </> filename sql
-          continueWith schemaPaths prefix txt
+          Main.continueWith schemaPaths prefix txt
 
   when (not $ Prelude.null others) do
     fail "will not continue with non-directories"
@@ -90,15 +89,9 @@ worker = do
 
              let txt = fromMaybe txt1 (Data.Text.stripSuffix ".json" txt1)
              when (Data.Text.isSuffixOf ".sql" txt) do
-               continueWith schemaPaths prefix (fromText txt)
+               Main.continueWith schemaPaths prefix (fromText txt)
 
     print =<< getChar
-
-data SqliteStatement = SqliteStatement
-  { ssfp :: Filesystem.Path.CurrentOS.FilePath
-  , ssParamNames :: [(ParamIndex, Maybe Utf8)]
-  , ssResultNames :: [(ColumnIndex, Utf8)]
-  } deriving (Show)
 
 toTypescript :: SqliteStatement -> Data.ByteString.Lazy.ByteString
 toTypescript stmt = [__i|
@@ -142,41 +135,22 @@ toTypescript stmt = [__i|
 
 continueWith :: (HasCallStack) => Data.Set.Set Filesystem.Path.CurrentOS.FilePath -> Filesystem.Path.CurrentOS.FilePath -> Filesystem.Path.CurrentOS.FilePath -> IO ()
 continueWith schemaPaths outPrefix  queryPath = do
-        if Data.Set.member queryPath schemaPaths
-          then basicEncode
-          else Effectful.runEff (runError applySchema >>= \case
-              Left e -> liftIO $ hPrint stderr (e :: (CallStack, DirectSqlError)) >> exitFailure
-              Right () -> pure ())
+        GetSqliteInfo.continueWith schemaPaths queryPath
+         >>= \case
+          Left e -> hPrint stderr e >> exitFailure
+          Right thingames -> case thingames of
+              JustSql sql -> do
+                let strSqlJson = outPrefix </> queryPath <.> "json"
+                txtSql <- decodeUtf8' sql & \case
+                    Left e -> hPrint stderr (e, sql) >> exitFailure -- this ought never to happen because we already returned a fatal error
+                    Right r -> pure r
+                let newSqlJson = Data.Aeson.encode $ txtSql
+                writeIfDifferent strSqlJson newSqlJson
+              stmtInfo@SqliteStatement { } -> do
+                 liftIO $ writeIfDifferent (outPrefix </> stmtInfo.ssfp <.> "ts") (toTypescript stmtInfo)
+                 liftIO $ writeIfDifferent (outPrefix </> stmtInfo.ssfp <.> "json") (Data.Aeson.encode $ utf8Text stmtInfo.sssql)
 
    where
-    finalizeIfNeeded = \case
-                 Right (Just stmt) -> do
-                   void $ liftIO $ finalize stmt
-                 _ -> pure ()
-    applySchema = do
-       let path = encodeString queryPath
-       sql <- liftIO $ Utf8 <$> Data.ByteString.readFile path
-       mstmtInfo <- bracket (liftEIO $ open ":memory:") (liftEIO . fmap (first \e -> (e, "close") :: DirectSqlError) . close) \db -> do
-           liftEIO $ exec db "begin transaction"
-           migrateSchema db (Data.Set.toList schemaPaths)
-           liftEIO $ exec db "commit"
-           bracket (liftIO ((first \e -> (e, sql)) <$> prepare db sql)) finalizeIfNeeded \emstmt -> do
-               case emstmt of
-                 Right (Just stmt) -> do
-                   paramsCardinality <- liftIO $ bindParameterCount stmt
-                   paramNames <- forM [1..paramsCardinality ] \ix -> do
-                     paramName <- liftIO $ bindParameterName stmt ix
-                     pure (ix, paramName)
-                   numCols <- liftIO $ columnCount stmt
-                   colNames <- forM [0..numCols - 1] \ix -> do
-                     colName <- liftIO $ columnName stmt ix
-                     pure (ix, colName)
-                   pure $ Just SqliteStatement { ssfp = queryPath, ssParamNames = paramNames, ssResultNames = mapMaybe sequence colNames }
-                 _ -> pure Nothing -- in case of a syntax error, we don't care, just let them keep editing
-       forM_ mstmtInfo \stmtInfo -> do
-         liftIO $ writeIfDifferent (outPrefix </> queryPath <.> "ts") (toTypescript stmtInfo)
-         liftIO $ writeIfDifferent (outPrefix </> queryPath <.> "json") (Data.Aeson.encode $ utf8Text sql)
-         pure ()
     writeIfDifferent path newData = do
         needsUpdate <- doesNeedUpdate path newData
         when needsUpdate do
@@ -192,14 +166,6 @@ continueWith schemaPaths outPrefix  queryPath = do
                   Debug.Trace.traceShowM ("needs update because"::String, show oldData, "is different from" :: String, show newData)
               pure x
             else Debug.Trace.traceShowM ("needs update because"::String, show path, "does not exist" :: String) >> pure True
-    basicEncode = do
-        let str = Filesystem.Path.CurrentOS.encodeString queryPath
-        sql <- Data.ByteString.readFile str >>= (\case
-            Left e -> hPrint stderr (e, str) >> exitFailure
-            Right r -> pure r) . decodeUtf8'
-        let strSqlJson = outPrefix </> queryPath <.> "json"
-        let newSqlJson = Data.Aeson.encode sql
-        writeIfDifferent strSqlJson newSqlJson
 
 utf8Text :: Utf8 -> Text
 utf8Text (Utf8 bs) = decodeUtf8 bs

@@ -47,7 +47,7 @@
         pkgs.hlint
         pkgs.nixd
         (pkgs.haskellPackages.ghcWithHoogle
-          (haskellPax: builtins.filter (a: a.pname != "library")
+          (haskellPax: builtins.filter (a: a.pname != "read-src-asset")
           (pkgs.lib.lists.concatMap (a: a.getBuildInputs.haskellBuildInputs) myPax)))
         pkgs.sqlite-interactive
         (jetbrainsWithPlugins pkgs pkgs.jetbrains.webstorm ["ideavim" "nixidea" "github-copilot"] ["boo.fox.haskelllsp" "com.redhat.devtools.lsp4ij"])

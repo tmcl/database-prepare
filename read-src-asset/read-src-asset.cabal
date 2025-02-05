@@ -45,10 +45,65 @@ build-type:         Simple
 extra-doc-files:    CHANGELOG.md
 
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
--- extra-source-files:
+extra-source-files:
+  test-data/query/basic-named.sql
+  test-data/query/basic-numbered.sql
+  test-data/query/basic-unnamed.sql
+  test-data/query/insert-named.sql
+  test-data/schema/schema.sql
 
 common warnings
     ghc-options: -Wall -Werror
+
+library
+    import:           warnings
+
+    -- Modules included in this library.
+    exposed-modules: MigrateSchema
+      GetSqliteInfo
+      SqliteTH
+
+    -- LANGUAGE extensions used by modules in this package.
+    default-extensions: TypeOperators FlexibleContexts OverloadedStrings BlockArguments LambdaCase OverloadedRecordDot
+
+    hs-source-dirs:   src
+
+    -- Other library packages from which modules are imported.
+    build-depends:    base ^>=4.18.2.1
+      , fsnotify
+      , aeson
+      , transformers
+      , mtl
+      , sqlite-simple
+      , row-types
+      , bytestring
+      , system-fileio
+      , system-filepath
+      , stm
+      , string-interpolate
+      , template-haskell
+      , directory
+      , containers
+      , time
+      , text
+      , direct-sqlite
+      , effectful ^>=2.5.1.0
+      , effectful-core ^>=2.5.1.0
+
+    default-language: GHC2021
+
+executable test-src-asset
+    import:           warnings
+    main-is: Extrafile.hs
+    other-modules: BasicNamed InsertNamed
+    hs-source-dirs:   example
+    default-language: GHC2021
+    build-depends:  base
+      , row-types
+      , read-src-asset
+      , sqlite-simple
+      , text
+      , time
 
 executable read-src-asset
     -- Import common warning flags.
@@ -57,9 +112,6 @@ executable read-src-asset
     -- .hs or .lhs file containing the Main module.
     main-is:          Main.hs
 
-    -- Modules included in this executable, other than Main.
-    other-modules: MigrateSchema
-
     -- LANGUAGE extensions used by modules in this package.
     default-extensions: TypeOperators FlexibleContexts OverloadedStrings
 
@@ -67,11 +119,14 @@ executable read-src-asset
     build-depends:    base ^>=4.18.2.1
       , fsnotify
       , aeson
+      , read-src-asset
+      , sqlite-simple
       , bytestring
       , system-fileio
       , system-filepath
       , stm
       , string-interpolate
+      , template-haskell
       , directory
       , containers
       , time
@@ -84,4 +139,4 @@ executable read-src-asset
     hs-source-dirs:   app
 
     -- Base language which the package is written in.
-    default-language: Haskell2010
+    default-language: GHC2021

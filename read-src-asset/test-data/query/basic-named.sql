@@ -1,1 +1,1 @@
-select * from users where id = $id or email = $email
+select name, email, id from users where id = $id or email = $email
