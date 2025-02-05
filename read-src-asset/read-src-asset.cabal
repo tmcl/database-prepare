@@ -47,6 +47,7 @@ extra-doc-files:    CHANGELOG.md
 -- Extra source files to be distributed with the package, such as examples, or a tutorial module.
 extra-source-files:
   test-data/query/basic-named.sql
+  test-data/query/basic-noparams.sql
   test-data/query/basic-numbered.sql
   test-data/query/basic-unnamed.sql
   test-data/query/insert-named.sql
@@ -95,7 +96,7 @@ library
 executable test-src-asset
     import:           warnings
     main-is: Extrafile.hs
-    other-modules: BasicNamed InsertNamed
+    other-modules: BasicNamed InsertNamed BasicNoparams
     hs-source-dirs:   example
     default-language: GHC2021
     build-depends:  base

@@ -73,14 +73,37 @@ embedSqlite schemas fpQuery name = do
            --let paramsTyNam1 = mkName "Params1"
            let paramsVarName = mkName "params"
            --let parametersTy = dataD @Q (pure []) paramsTyNam1 [] Nothing [(recC paramsTyNam1  recordFields)] []
-           let parametersTy2 = newtypeD @Q (pure []) paramsTyNam [] Nothing (normalC paramsTyNam [bangTy]) [derivClause Nothing [ [t|Show|], [t|Eq|]] ]
-                  where
-                    bangTy = do
-                      app <- appT [t|Rec|] recTyArgs
-                      pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
-                    buildArg :: (ParamIndex, Maybe Utf8) -> Q Type
-                    buildArg (ix, mname) = [t| $(pure $ LitT $ StrTyLit $ maybe (show ix) (Data.Text.unpack . txtUtf8) mname) .== SQLData|]
-                    recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> params)
+           let (parametersTy2, implementation) = case params of
+                  [] -> ([], [queryUnnamedType, queryUnnamedImplementation])
+                    where
+                      queryUnnamedType = sigD (query1) [t| Connection -> IO [$(pure $ ConT resultsTyNam)] |]
+                      queryUnnamedImplementation =
+                           let c = clause @Q [pure $ VarP connName] (normalB [| Database.SQLite.Simple.query_ $(conn) (Query txtSql)  |]) []
+                           in funD query1 [c]
+                  _ -> ([rowType, toNamedParamsTy,toNamedParamsDef], [queryNamedType, queryNamedImplementation])
+                    where
+                      paramToNamedParam :: ParamIndex -> Maybe Utf8 -> Q Exp
+                      paramToNamedParam ix = \case
+                               Just (Utf8 v) -> let fieldName = Data.Text.unpack (decodeUtf8 v) in defineConversion fieldName
+                               Nothing -> let fieldName = "param" <> show ix in defineConversion fieldName
+                              where defineConversion fieldName = [| $(stringE fieldName) := ($(varE paramsVarName) .! $(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) ) |]
+                      toNamedParamsDef  :: Q Dec
+                      toNamedParamsDef = funD toNamedParamsVarName [clause @Q [pure $ ConP paramsTyNam [] [VarP paramsVarName]]  (normalB $ listE $ (uncurry paramToNamedParam) <$> params)  []]
+                      toNamedParamsVarName = mkName "toNamedParams"
+                      toNamedParamsTy :: Q Dec
+                      toNamedParamsTy = sigD toNamedParamsVarName [t| $(pure $ ConT paramsTyNam) -> [NamedParam] |]
+                      queryNamedType = sigD (query1) [t| Connection -> $(pure $ ConT paramsTyNam) -> IO [$(pure $ ConT resultsTyNam)] |]
+                      queryNamedImplementation =
+                           let c = clause @Q [pure $ VarP connName, pure $ VarP paramsVarName] (normalB [| Database.SQLite.Simple.queryNamed $(conn) (Query txtSql) ($(varE toNamedParamsVarName) $(varE paramsVarName) ) |]) []
+                           in funD query1 [c]
+                      rowType = newtypeD @Q (pure []) paramsTyNam [] Nothing (normalC paramsTyNam [bangTy]) [derivClause Nothing [ [t|Show|], [t|Eq|]] ]
+                          where
+                            bangTy = do
+                              app <- appT [t|Rec|] recTyArgs
+                              pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
+                            buildArg :: (ParamIndex, Maybe Utf8) -> Q Type
+                            buildArg (ix, mname) = [t| $(pure $ LitT $ StrTyLit $ maybe (show ix) (Data.Text.unpack . txtUtf8) mname) .== SQLData|]
+                            recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> params)
 
            let resultsTy = newtypeD @Q (pure []) resultsTyNam [] Nothing (normalC resultsTyNam [bangTy]) [derivClause Nothing [ ] ]
                   where
@@ -109,16 +132,5 @@ embedSqlite schemas fpQuery name = do
                       let fieldName = strUtf8 utf8
                           ixE = litE $ IntegerL $ fromIntegral ix
                       in [| $(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) .== Field ($(varE columns)  !! $(ixE)) $(ixE) .+ $rest |]
-           let toNamedParamsVarName = mkName "toNamedParams"
-           let toNamedParamsTy :: Q Dec
-               toNamedParamsTy = sigD toNamedParamsVarName [t| $(pure $ ConT paramsTyNam) -> [NamedParam] |]
-           let paramToNamedParam :: ParamIndex -> (Maybe Utf8) -> Q Exp
-               paramToNamedParam ix = \case
-                   Just (Utf8 v) -> let fieldName = Data.Text.unpack (decodeUtf8 v) in defineConversion fieldName
-                   Nothing -> let fieldName = "param" <> show ix in defineConversion fieldName
-                  where defineConversion fieldName = [| $(stringE fieldName) := ($(varE paramsVarName) .! $(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) ) |]
-           let toNamedParamsDef  :: Q Dec
-               toNamedParamsDef = funD toNamedParamsVarName [clause @Q [pure $ ConP paramsTyNam [] [VarP paramsVarName]]  (normalB $ listE $ (uncurry paramToNamedParam) <$> params)  []]
 
-           let c = clause @Q [pure $ VarP connName, pure $ VarP paramsVarName] (normalB [| Database.SQLite.Simple.queryNamed $(conn) (Query txtSql) ($(varE toNamedParamsVarName) $(varE paramsVarName) ) |]) []
-           Data.Traversable.sequence [parametersTy2, resultsTy, resultsInstance, toNamedParamsTy,toNamedParamsDef, sigD (query1) [t| Connection -> $(pure $ ConT paramsTyNam) -> IO [$(pure $ ConT resultsTyNam)] |]  , funD query1 [c]]
+           Data.Traversable.sequence (parametersTy2 <> [resultsTy, resultsInstance] <> implementation)
