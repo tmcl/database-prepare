@@ -43,7 +43,8 @@ main = worker
 worker :: HasCallStack => IO ()
 worker = do
   cwd <- getCurrentDirectory
-  args <- System.Environment.getArgs
+  allArgs <- System.Environment.getArgs
+  let (watches, args) = maybe (False, allArgs) (\restArgs -> (True, restArgs)) $ Data.List.stripPrefix ["--watch"] allArgs
   Data.ByteString.Lazy.putStr (Data.Aeson.encode args <> "\n")
   let arguments = Data.List.foldr (\arg accum -> case arg of
                                    theArg | Just outPath <- Data.List.stripPrefix "--out=" theArg -> accum { out = Just (Filesystem.Path.CurrentOS.decodeString outPath) }
@@ -61,7 +62,7 @@ worker = do
 
   schemaPaths <- Data.Set.fromList . join <$> forM (Data.Set.toList arguments.argSchemaPaths) \dir -> do
        dirContent <- Filesystem.listDirectory dir
-       forM dirContent (\fi -> Filesystem.isFile fi  >>= guard >> pure fi)
+       forM dirContent (\fi -> fi <$ (Filesystem.isFile fi  >>= guard))
 
   forM_ directories \dir -> do
        dirContent <- Filesystem.listDirectory dir
@@ -78,20 +79,21 @@ worker = do
          Added {} -> True
          Modified {} -> True
          _ -> False
-  withManager \inotify -> do
-    forM_ directories \dir -> do
-       watchDir inotify  (encodeString dir) interestingEvent \event -> do
-         let rawfp = eventPath event
-         case Data.List.stripPrefix (cwd <> "/") rawfp of
-          Nothing -> pure ()
-          Just fn -> do
-             let txt1 = Data.Text.pack fn
+  when watches do
+      withManager \inotify -> do
+        forM_ directories \dir -> do
+           watchDir inotify  (encodeString dir) interestingEvent \event -> do
+             let rawfp = eventPath event
+             case Data.List.stripPrefix (cwd <> "/") rawfp of
+              Nothing -> pure ()
+              Just fn -> do
+                 let txt1 = Data.Text.pack fn
 
-             let txt = fromMaybe txt1 (Data.Text.stripSuffix ".json" txt1)
-             when (Data.Text.isSuffixOf ".sql" txt) do
-               Main.continueWith schemaPaths prefix (fromText txt)
+                 let txt = fromMaybe txt1 (Data.Text.stripSuffix ".json" txt1)
+                 when (Data.Text.isSuffixOf ".sql" txt) do
+                   Main.continueWith schemaPaths prefix (fromText txt)
 
-    print =<< getChar
+        print =<< getChar
 
 toTypescript :: SqliteStatement -> Data.ByteString.Lazy.ByteString
 toTypescript stmt = [__i|
