@@ -18,10 +18,11 @@
        self: super: {
         effectful-core = super.effectful-core_2_5_1_0;
         effectful = super.effectful_2_5_1_0;
+        read-src-asset = read-src-asset self;
       }
     );
   };
-      read-src-asset = haskellPax: haskellPax.callCabal2nix "read-src-asset" ./read-src-asset {};
+    read-src-asset =  haskellPackages: haskellPackages.callCabal2nix "read-src-asset" ./read-src-asset {}
     jetbrainsWithPlugins = pkgs: ide: pluginsNixpkgs: pluginsExtras: (
       pkgs.jetbrains.plugins.addPlugins ide
       (pluginsNixpkgs ++ builtins.map (a: inputs.nix-jetbrains-plugins.plugins."${pkgs.system}"."${ide.pname}"."${ide.version}"."${a}") pluginsExtras)
@@ -33,12 +34,14 @@
       config.allowUnfreePredicate = pkg:
         builtins.elem (pkgs.lib.getName pkg) ["webstorm" "webstorm-with-plugins"];
       };
-      myPax = [(read-src-asset pkgs.haskellPackages)];
+      myPax = [(pkgs.haskellPackages.read-src-asset)];
 
    in {
-    packages.default = read-src-asset nixpkgs.legacyPackages.x86_64-linux.haskellPackages;
+    overlays = overlay;
+    packages.default = nixpkgs.legacyPackages.x86_64-linux.haskellPackages.read-src-asset;
     devShell = pkgs.mkShell {
       WEBIDE_PROPERTIES = ./idea.properties;
+      IDEA_PROPERTIES = ./idea.properties;
       packages = [
         pkgs.haskell-language-server
         pkgs.cabal-install
