@@ -22,7 +22,7 @@
       }
     );
   };
-    read-src-asset =  haskellPackages: haskellPackages.callCabal2nix "read-src-asset" ./read-src-asset {}
+    read-src-asset =  haskellPackages: haskellPackages.callCabal2nix "read-src-asset" ./read-src-asset {};
     jetbrainsWithPlugins = pkgs: ide: pluginsNixpkgs: pluginsExtras: (
       pkgs.jetbrains.plugins.addPlugins ide
       (pluginsNixpkgs ++ builtins.map (a: inputs.nix-jetbrains-plugins.plugins."${pkgs.system}"."${ide.pname}"."${ide.version}"."${a}") pluginsExtras)
