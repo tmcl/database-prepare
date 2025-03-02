@@ -23,6 +23,7 @@
   let pkgs = import nixpkgs {
     inherit system ;
     overlays = [overlay];
+    };
       myPax = [(pkgs.haskellPackages.read-src-asset)];
 
    in {
