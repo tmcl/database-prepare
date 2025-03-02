@@ -5,10 +5,6 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
 
     flake-utils.url = "github:numtide/flake-utils";
-    nix-jetbrains-plugins = {
-      url = "github:theCapypara/nix-jetbrains-plugins";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
 
   };
 
@@ -23,17 +19,10 @@
     );
   };
     read-src-asset =  haskellPackages: haskellPackages.callCabal2nix "read-src-asset" ./read-src-asset {};
-    jetbrainsWithPlugins = pkgs: ide: pluginsNixpkgs: pluginsExtras: (
-      pkgs.jetbrains.plugins.addPlugins ide
-      (pluginsNixpkgs ++ builtins.map (a: inputs.nix-jetbrains-plugins.plugins."${pkgs.system}"."${ide.pname}"."${ide.version}"."${a}") pluginsExtras)
-      );
-  withEachSystem = flake-utils.lib.eachSystem [flake-utils.lib.system.x86_64-linux flake-utils.lib.system.aarch64-darwin] (system:
+  withEachSystem = flake-utils.lib.eachDefaultSystem  (system:
   let pkgs = import nixpkgs {
     inherit system ;
     overlays = [overlay];
-      config.allowUnfreePredicate = pkg:
-        builtins.elem (pkgs.lib.getName pkg) ["webstorm" "webstorm-with-plugins"];
-      };
       myPax = [(pkgs.haskellPackages.read-src-asset)];
 
    in {
@@ -53,7 +42,6 @@
           (haskellPax: builtins.filter (a: a.pname != "read-src-asset")
           (pkgs.lib.lists.concatMap (a: a.getBuildInputs.haskellBuildInputs) myPax)))
         pkgs.sqlite-interactive
-        (jetbrainsWithPlugins pkgs pkgs.jetbrains.webstorm ["ideavim" "nixidea" "github-copilot"] ["boo.fox.haskelllsp" "com.redhat.devtools.lsp4ij"])
       ];
     };
 
