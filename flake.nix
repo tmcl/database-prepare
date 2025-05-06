@@ -2,7 +2,7 @@
   description = "A very basic flake";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
 
     flake-utils.url = "github:numtide/flake-utils";
 
@@ -12,8 +12,6 @@
   let overlay = final: prev: {
     haskellPackages = prev.haskellPackages.extend (
        self: super: {
-        effectful-core = super.effectful-core_2_5_1_0;
-        effectful = super.effectful_2_5_1_0;
         read-src-asset = read-src-asset self;
       }
     );
@@ -26,12 +24,20 @@
     };
       myPax = [(pkgs.haskellPackages.read-src-asset)];
 
+      idea-properties = pkgs.writeText "idea.properties" ''
+        idea.config.path=./.IdeaIC/config
+        idea.system.path=./.IdeaIC/system
+        idea.plugins.path=./.IdeaIC/plugins
+        idea.log.path=./.IdeaIC/log
+        idea.fatal.error.notification=enabled
+      '';
+
    in {
     overlays = overlay;
-    packages.default = nixpkgs.legacyPackages.x86_64-linux.haskellPackages.read-src-asset;
+    packages.default = pkgs.haskellPackages.read-src-asset;
     devShell = pkgs.mkShell {
-      WEBIDE_PROPERTIES = ./idea.properties;
-      IDEA_PROPERTIES = ./idea.properties;
+      WEBIDE_PROPERTIES = idea-properties;
+      IDEA_PROPERTIES = idea-properties;
       packages = [
         pkgs.haskell-language-server
         pkgs.cabal-install
