@@ -45,7 +45,7 @@ data GetSqlInfoClassifiedError =
 
 data FatalError = InvalidUtf8 UnicodeException | FatalDirectSqlError DirectSqlError
  deriving (Show)
-data NonfatalError = NonfatalDirectSqlError DirectSqlError | EmptyFile
+data NonfatalError = NonfatalDirectSqlError DirectSqlError Database.SQLite3.Direct.Error Utf8 | EmptyFile
  deriving (Show)
 
 wrapFatal :: DirectSqlError -> GetSqlInfoError
@@ -90,7 +90,10 @@ continueWith schemaPaths queryPath = do
                      pure (ix, colName)
                    pure $ SqliteStatement {sssql = sql  , ssfp = queryPath, ssParamNames = paramNames, ssResultNames = mapMaybe sequence colNames }
                  Right Nothing -> throwError $ GetSqlInfoError queryPath sqlBs $ NonfatalError EmptyFile
-                 Left e -> throwError $ GetSqlInfoError queryPath sqlBs $ NonfatalError $ NonfatalDirectSqlError e
+                 Left e -> do 
+                   dse <- liftIO $ extendedErrcode db
+                   dsm <- liftIO $ errmsg db
+                   throwError $ GetSqlInfoError queryPath sqlBs $ NonfatalError $ NonfatalDirectSqlError e dse dsm
 
     basicEncode :: HasCallStack => IO (Either (CallStack, GetSqlInfoError) SqliteStatement)
     basicEncode = do
