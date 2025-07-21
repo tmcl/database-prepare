@@ -23,6 +23,7 @@ import Database.SQLite.Simple.FromField
 import Data.Time
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-named.sql" "queryAll" )
+$(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-named.sql" "distraction" )
 
 data User = User { uId :: Int, name :: Text, email :: Text, created :: UTCTime }
   deriving (Show, Eq)

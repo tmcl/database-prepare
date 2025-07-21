@@ -93,7 +93,7 @@ embedSqlite schemas fpQuery name = do
                               where defineConversion fieldName = [| $(stringE fieldName) := ($(varE paramsVarName) .! $(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) ) |]
                       toNamedParamsDef  :: Q Dec
                       toNamedParamsDef = funD toNamedParamsVarName [clause @Q [pure $ ConP paramsTyNam [] [VarP paramsVarName]]  (normalB $ listE $ (uncurry paramToNamedParam) <$> params)  []]
-                      toNamedParamsVarName = mkName "toNamedParams"
+                      toNamedParamsVarName = mkName ("toNamed" <> capName <> "Params")
                       toNamedParamsTy :: Q Dec
                       toNamedParamsTy = sigD toNamedParamsVarName [t| $(pure $ ConT paramsTyNam) -> [NamedParam] |]
                       queryNamedType = sigD (query1) [t| Connection -> $(pure $ ConT paramsTyNam) -> IO [$(pure $ ConT resultsTyNam)] |]
