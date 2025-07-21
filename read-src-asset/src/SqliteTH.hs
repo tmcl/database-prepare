@@ -9,6 +9,7 @@
 {-# LANGUAGE DataKinds #-}
 module SqliteTH where
 
+import Data.Char
 import Control.Monad.Trans.Class
 import Control.Monad.State.Strict
 import Data.Row.Records
@@ -18,7 +19,7 @@ import Filesystem.Path.CurrentOS
 import Data.Set
 import Database.SQLite.Simple
 import Database.SQLite.Simple.Internal
-import Database.SQLite3.Direct
+import Database.SQLite3.Direct qualified
 import Data.Text.Encoding
 import Data.Function
 import Data.Traversable
@@ -26,17 +27,20 @@ import Data.List
 import Data.Text
 import Language.Haskell.TH.Syntax (Quasi(qAddDependentFile))
 
-strUtf8 :: Utf8 -> String
-strUtf8 (Utf8 a) = Data.Text.unpack $ decodeUtf8 a
+strUtf8 :: Database.SQLite3.Direct.Utf8 -> String
+strUtf8 (Database.SQLite3.Direct.Utf8 a) = Data.Text.unpack $ decodeUtf8 a
 
-txtUtf8 :: Utf8 -> Text
-txtUtf8 (Utf8 a) = decodeUtf8 a
+txtUtf8 :: Database.SQLite3.Direct.Utf8 -> Text
+txtUtf8 (Database.SQLite3.Direct.Utf8 a) = decodeUtf8 a
 
 embedSqlite :: Data.Set.Set Filesystem.Path.CurrentOS.FilePath -> Filesystem.Path.CurrentOS.FilePath -> String -> Q [Dec]
 embedSqlite schemas fpQuery name = do
   qAddDependentFile (encodeString fpQuery)
   mapM_ qAddDependentFile (encodeString <$> toList schemas)
   let query1 = mkName name
+  let capName = case name of
+         n:ame -> Data.Char.toUpper n:ame
+         _ -> name
   sqlite <- runIO do continueWith schemas fpQuery
   case sqlite of
         Left (cs, err) -> fail (show cs <> show err)
@@ -48,7 +52,7 @@ embedSqlite schemas fpQuery name = do
                 Right txt -> pure txt
            let c = clause @Q [pure $ VarP connName] (normalB [| Database.SQLite.Simple.execute_ $(conn) (Query txtSql) |]) []
            Data.Traversable.sequence [sigD (query1) [t| Connection -> IO () |]  , funD query1 [c]]
-        Right stmt@(SqliteStatement _ (Utf8 bs) params results) -> do
+        Right stmt@(SqliteStatement _ (Database.SQLite3.Direct.Utf8 bs) params results) -> do
            let connName = mkName "conn"
            let conn = pure $ VarE $ connName
            txtSql <- decodeUtf8' bs & \case
@@ -68,8 +72,8 @@ embedSqlite schemas fpQuery name = do
            --         ty <- [t| SQLData |]
            --         pure (mkName $ buildName ix mName, Bang NoSourceUnpackedness NoSourceStrictness, ty)
            --let recordFields :: [Q VarBangType]  = uncurry mkField <$> params
-           let paramsTyNam = mkName "Params"
-           let resultsTyNam = mkName "Result"
+           let paramsTyNam = mkName (capName <> "Params")
+           let resultsTyNam = mkName (capName <> "Result")
            --let paramsTyNam1 = mkName "Params1"
            let paramsVarName = mkName "params"
            --let parametersTy = dataD @Q (pure []) paramsTyNam1 [] Nothing [(recC paramsTyNam1  recordFields)] []
@@ -82,9 +86,9 @@ embedSqlite schemas fpQuery name = do
                            in funD query1 [c]
                   _ -> ([rowType, toNamedParamsTy,toNamedParamsDef], [queryNamedType, queryNamedImplementation])
                     where
-                      paramToNamedParam :: ParamIndex -> Maybe Utf8 -> Q Exp
+                      paramToNamedParam :: Database.SQLite3.Direct.ParamIndex -> Maybe Database.SQLite3.Direct.Utf8 -> Q Exp
                       paramToNamedParam ix = \case
-                               Just (Utf8 v) -> let fieldName = Data.Text.unpack (decodeUtf8 v) in defineConversion fieldName
+                               Just (Database.SQLite3.Direct.Utf8 v) -> let fieldName = Data.Text.unpack (decodeUtf8 v) in defineConversion fieldName
                                Nothing -> let fieldName = "param" <> show ix in defineConversion fieldName
                               where defineConversion fieldName = [| $(stringE fieldName) := ($(varE paramsVarName) .! $(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) ) |]
                       toNamedParamsDef  :: Q Dec
@@ -101,7 +105,7 @@ embedSqlite schemas fpQuery name = do
                             bangTy = do
                               app <- appT [t|Rec|] recTyArgs
                               pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
-                            buildArg :: (ParamIndex, Maybe Utf8) -> Q Type
+                            buildArg :: (Database.SQLite3.Direct.ParamIndex, Maybe Database.SQLite3.Direct.Utf8) -> Q Type
                             buildArg (ix, mname) = [t| $(pure $ LitT $ StrTyLit $ maybe (show ix) (Data.Text.unpack . txtUtf8) mname) .== SQLData|]
                             recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> params)
 
@@ -110,7 +114,7 @@ embedSqlite schemas fpQuery name = do
                     bangTy = do
                       app <- appT [t|Rec|] recTyArgs
                       pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
-                    buildArg :: (Database.SQLite3.Direct.ColumnIndex, Utf8) -> Q Type
+                    buildArg :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Type
                     buildArg (_ix, mname) = [t| $(pure $ LitT $ StrTyLit $ (Data.Text.unpack . txtUtf8) mname) .== Field|]
                     recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> results)
 
@@ -120,14 +124,14 @@ embedSqlite schemas fpQuery name = do
                    noBindS  [| RP $ lift $ put ($(numCols), []) |],
                    letS [funD columns [clause [] (normalB [| snd $(pure $ VarE countColumns) |]) []]],
                    letS [funD rec [clause [] (normalB builtRecords ) []]],
-                   noBindS [| pure $ Result $( pure $ VarE rec ) |]
+                   noBindS [| pure $ $(pure $ ConE resultsTyNam) $( pure $ VarE rec ) |]
                    ]) []]]
                   where
                     numCols = litE $ IntegerL $ fromIntegral $ Data.List.length results
                     countColumns = mkName "countColumns"
                     columns = mkName "columns"
                     builtRecords = Data.List.foldr recordBuilder [| Data.Row.Records.empty |] results
-                    recordBuilder :: (Database.SQLite3.Direct.ColumnIndex, Utf8) -> Q Exp -> Q Exp
+                    recordBuilder :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Exp -> Q Exp
                     recordBuilder (Database.SQLite3.Direct.ColumnIndex ix, utf8) rest =
                       let fieldName = strUtf8 utf8
                           ixE = litE $ IntegerL $ fromIntegral ix

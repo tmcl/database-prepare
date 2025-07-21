@@ -25,8 +25,8 @@ main :: IO ()
 main = do
   conn <- open "test-data/test.db"
   buildSchema conn
-  ixes <- insertNamed conn $ InsertNamed.Params ( Label @"$name" .== SQLText "Alice" .+ Label @"$email" .== SQLText "olooe@aoice.example" .+ Data.Row.Records.empty )
-  forM_ ixes \(InsertNamed.Result ix) -> do
+  ixes <- insertNamed conn $ InsertNamedParams ( Label @"$name" .== SQLText "Alice" .+ Label @"$email" .== SQLText "olooe@aoice.example" .+ Data.Row.Records.empty )
+  forM_ ixes \(InsertNamedResult ix) -> do
     let qp = BasicNamed.QueryParams { qpEmail = Nothing, qpId = ok2maybe (fromField $ ix .! #id) }
     basicNamed conn qp
      >>= print

@@ -31,11 +31,11 @@ data QueryParams = QueryParams { qpEmail :: Maybe Text, qpId :: Maybe Int }
   deriving (Show, Eq)
 
 
-qp2params :: QueryParams -> Params
-qp2params QueryParams {..} = Params ( Label @"$email" .== toField qpEmail .+ Label @"$id" .== toField qpId .+ Data.Row.Records.empty )
+qp2params :: QueryParams -> QueryAllParams
+qp2params QueryParams {..} = QueryAllParams ( Label @"$email" .== toField qpEmail .+ Label @"$id" .== toField qpId .+ Data.Row.Records.empty )
 
-result2User :: Result -> Ok User
-result2User (Result result) = do
+result2User :: QueryAllResult -> Ok User
+result2User (QueryAllResult result) = do
                                uId <- fromField $ result .! #id
                                name <- fromField $ result .! #name
                                email <- fromField $ result .! #email
