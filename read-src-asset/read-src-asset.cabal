@@ -88,8 +88,8 @@ library
       , time
       , text
       , direct-sqlite
-      , effectful ^>=2.5.1.0
-      , effectful-core ^>=2.5.1.0
+      , effectful
+      , effectful-core
 
     default-language: GHC2021
 
@@ -133,8 +133,8 @@ executable read-src-asset
       , time
       , text
       , direct-sqlite
-      , effectful ^>=2.5.1.0
-      , effectful-core ^>=2.5.1.0
+      , effectful
+      , effectful-core
 
     -- Directories containing source files.
     hs-source-dirs:   app

@@ -43,12 +43,12 @@ embedSqlite schemas fpQuery name = do
          _ -> name
   sqlite <- runIO do continueWith schemas fpQuery
   case sqlite of
-        Left (cs, err) -> fail (show cs <> show err)
+        Left (cs, err) -> fail (Prelude.show cs <> Prelude.show err)
         Right (JustSql bs) -> do
            let connName = mkName "conn"
            let conn = pure $ VarE $ connName
            txtSql <- decodeUtf8' bs & \case
-                Left e -> fail (show e)
+                Left e -> fail (Prelude.show e)
                 Right txt -> pure txt
            let c = clause @Q [pure $ VarP connName] (normalB [| Database.SQLite.Simple.execute_ $(conn) (Query txtSql) |]) []
            Data.Traversable.sequence [sigD (query1) [t| Connection -> IO () |]  , funD query1 [c]]
@@ -56,7 +56,7 @@ embedSqlite schemas fpQuery name = do
            let connName = mkName "conn"
            let conn = pure $ VarE $ connName
            txtSql <- decodeUtf8' bs & \case
-                Left e -> fail (show e)
+                Left e -> fail (Prelude.show e)
                 Right txt -> pure txt
            runIO $ print stmt
            -- let stringName = \case
@@ -89,7 +89,7 @@ embedSqlite schemas fpQuery name = do
                       paramToNamedParam :: Database.SQLite3.Direct.ParamIndex -> Maybe Database.SQLite3.Direct.Utf8 -> Q Exp
                       paramToNamedParam ix = \case
                                Just (Database.SQLite3.Direct.Utf8 v) -> let fieldName = Data.Text.unpack (decodeUtf8 v) in defineConversion fieldName
-                               Nothing -> let fieldName = "param" <> show ix in defineConversion fieldName
+                               Nothing -> let fieldName = "param" <> Prelude.show ix in defineConversion fieldName
                               where defineConversion fieldName = [| $(stringE fieldName) := ($(varE paramsVarName) .! $(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) ) |]
                       toNamedParamsDef  :: Q Dec
                       toNamedParamsDef = funD toNamedParamsVarName [clause @Q [pure $ ConP paramsTyNam [] [VarP paramsVarName]]  (normalB $ listE $ (uncurry paramToNamedParam) <$> params)  []]
@@ -106,7 +106,7 @@ embedSqlite schemas fpQuery name = do
                               app <- appT [t|Rec|] recTyArgs
                               pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
                             buildArg :: (Database.SQLite3.Direct.ParamIndex, Maybe Database.SQLite3.Direct.Utf8) -> Q Type
-                            buildArg (ix, mname) = [t| $(pure $ LitT $ StrTyLit $ maybe (show ix) (Data.Text.unpack . txtUtf8) mname) .== SQLData|]
+                            buildArg (ix, mname) = [t| $(pure $ LitT $ StrTyLit $ maybe (Prelude.show ix) (Data.Text.unpack . txtUtf8) mname) .== SQLData|]
                             recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> params)
 
            let resultsTy = newtypeD @Q (pure []) resultsTyNam [] Nothing (normalC resultsTyNam [bangTy]) [derivClause Nothing [ ] ]

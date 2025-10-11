@@ -165,9 +165,9 @@ continueWith schemaPaths outPrefix  queryPath = do
               oldData <- Data.ByteString.Lazy.readFile (encodeString path)
               let x = oldData /= newData
               when x do
-                  Debug.Trace.traceShowM ("needs update because"::String, show oldData, "is different from" :: String, show newData)
+                  Debug.Trace.traceShowM ("needs update because"::String, Prelude.show oldData, "is different from" :: String, Prelude.show newData)
               pure x
-            else Debug.Trace.traceShowM ("needs update because"::String, show path, "does not exist" :: String) >> pure True
+            else Debug.Trace.traceShowM ("needs update because"::String, Prelude.show path, "does not exist" :: String) >> pure True
 
 utf8Text :: Utf8 -> Text
 utf8Text (Utf8 bs) = decodeUtf8 bs
