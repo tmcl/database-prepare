@@ -1,35 +1,35 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE BlockArguments #-}
 
 module Main where
 
-import SqliteTH
+import BasicNamed
+import Control.Monad
 import Data.Row.Records
 import Database.SQLite.Simple
-import Database.SQLite.Simple.Ok
 import Database.SQLite.Simple.FromField
-import BasicNamed
+import Database.SQLite.Simple.Ok
 import InsertNamed
-import Control.Monad
+import SqliteTH
 
-$( embedSqlite ["test-data/schema/schema.sql"] "test-data/schema/schema.sql" "buildSchema" )
+$(embedSqlite ["test-data/schema/schema.sql"] "test-data/schema/schema.sql" "buildSchema")
 
 main :: IO ()
 main = do
   conn <- open "test-data/test.db"
   buildSchema conn
-  ixes <- insertNamed conn $ InsertNamedParams ( Label @"$name" .== SQLText "Alice" .+ Label @"$email" .== SQLText "olooe@aoice.example" .+ Data.Row.Records.empty )
+  ixes <- insertNamed conn $ InsertNamedParams (Label @"$name" .== SQLText "Alice" .+ Label @"$email" .== SQLText "olooe@aoice.example" .+ Data.Row.Records.empty)
   forM_ ixes \(InsertNamedResult ix) -> do
-    let qp = BasicNamed.QueryParams { qpEmail = Nothing, qpId = ok2maybe (fromField $ ix .! #id) }
+    let qp = BasicNamed.QueryParams {qpEmail = Nothing, qpId = ok2maybe (fromField $ ix .! #id)}
     basicNamed conn qp
-     >>= print
+      >>= print
   pure ()
 
 ok2maybe :: Ok a -> Maybe a

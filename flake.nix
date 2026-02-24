@@ -3,9 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
-
     flake-utils.url = "github:numtide/flake-utils";
-
   };
 
   outputs = { self, nixpkgs, flake-utils, ... }@inputs:
@@ -45,6 +43,7 @@
         pkgs.ormolu
         pkgs.hlint
         pkgs.nixd
+        pkgs.nixfmt
         (pkgs.haskellPackages.ghcWithHoogle
           (haskellPax: builtins.filter (a: a.pname != "read-src-asset")
           (pkgs.lib.lists.concatMap (a: a.getBuildInputs.haskellBuildInputs) myPax)))
