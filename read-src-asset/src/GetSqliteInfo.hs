@@ -17,27 +17,13 @@ import Database.SQLite3.Direct
 import Effectful
 import Effectful.Error.Static
 import Effectful.Exception
-import Filesystem.Path.CurrentOS
 import GHC.Stack
 import MigrateSchema
-
--- import Foreign
--- import Database.SQLite3.Bindings
--- import Database.SQLite3.Bindings.Types
--- import Data.Text
--- import Database.SQLite3
-
-data Arguments = Arguments
-  { out :: Maybe Filesystem.Path.CurrentOS.FilePath,
-    paths :: Data.Set.Set Filesystem.Path.CurrentOS.FilePath,
-    argSchemaPaths :: Data.Set.Set Filesystem.Path.CurrentOS.FilePath
-  }
-  deriving (Show)
 
 data SqliteStatement
   = JustSql Data.ByteString.ByteString
   | SqliteStatement
-      { ssfp :: Filesystem.Path.CurrentOS.FilePath,
+      { ssfp :: FilePath,
         sssql :: Utf8,
         ssParamNames :: [(ParamIndex, Maybe Utf8)],
         ssResultNames :: [(ColumnIndex, Utf8)]
@@ -45,7 +31,7 @@ data SqliteStatement
   deriving (Show)
 
 data GetSqlInfoError = GetSqlInfoError
-  { sourceFile :: Filesystem.Path.CurrentOS.FilePath,
+  { sourceFile :: FilePath,
     sourceBytestring :: Data.ByteString.ByteString,
     actualError :: GetSqlInfoClassifiedError
   }
@@ -65,7 +51,7 @@ data NonfatalError = NonfatalDirectSqlError DirectSqlError Database.SQLite3.Dire
 wrapFatal :: DirectSqlError -> GetSqlInfoError
 wrapFatal = GetSqlInfoError "" "" . FatalError . FatalDirectSqlError
 
-continueWith :: (HasCallStack) => Data.Set.Set Filesystem.Path.CurrentOS.FilePath -> Filesystem.Path.CurrentOS.FilePath -> IO (Either (CallStack, GetSqlInfoError) SqliteStatement)
+continueWith :: (HasCallStack) => Data.Set.Set FilePath -> FilePath -> IO (Either (CallStack, GetSqlInfoError) SqliteStatement)
 continueWith schemaPaths queryPath = do
   if Data.Set.member queryPath schemaPaths
     then basicEncode
@@ -79,8 +65,7 @@ continueWith schemaPaths queryPath = do
 
     applySchema :: Eff [Effectful.Error.Static.Error GetSqlInfoError, IOE] SqliteStatement
     applySchema = do
-      let path = encodeString queryPath
-      sqlBs <- liftIO $ Data.ByteString.readFile path
+      sqlBs <- liftIO $ Data.ByteString.readFile queryPath
       sql <-
         (fmap encodeUtf8 . decodeUtf8') sqlBs
           & \case
@@ -111,8 +96,7 @@ continueWith schemaPaths queryPath = do
 
     basicEncode :: (HasCallStack) => IO (Either (CallStack, GetSqlInfoError) SqliteStatement)
     basicEncode = do
-      let str = Filesystem.Path.CurrentOS.encodeString queryPath
-      sqlBs <- Data.ByteString.readFile str
+      sqlBs <- Data.ByteString.readFile queryPath
       let sql = (fmap encodeUtf8 . decodeUtf8') sqlBs
       pure (bimap (\x -> (callStack, GetSqlInfoError queryPath sqlBs . FatalError . InvalidUtf8 $ x)) JustSql sql)
 

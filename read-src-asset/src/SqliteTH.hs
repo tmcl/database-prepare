@@ -11,7 +11,6 @@
 module SqliteTH where
 
 import Control.Monad.State.Strict
-import Control.Monad.Trans.Class
 import Data.Char
 import Data.Function
 import Data.List
@@ -23,7 +22,6 @@ import Data.Traversable
 import Database.SQLite.Simple
 import Database.SQLite.Simple.Internal
 import Database.SQLite3.Direct qualified
-import Filesystem.Path.CurrentOS
 import GetSqliteInfo
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Quasi (qAddDependentFile))
@@ -34,10 +32,10 @@ strUtf8 (Database.SQLite3.Direct.Utf8 a) = Data.Text.unpack $ decodeUtf8 a
 txtUtf8 :: Database.SQLite3.Direct.Utf8 -> Text
 txtUtf8 (Database.SQLite3.Direct.Utf8 a) = decodeUtf8 a
 
-embedSqlite :: Data.Set.Set Filesystem.Path.CurrentOS.FilePath -> Filesystem.Path.CurrentOS.FilePath -> String -> Q [Dec]
+embedSqlite :: Data.Set.Set FilePath -> FilePath -> String -> Q [Dec]
 embedSqlite schemas fpQuery name = do
-  qAddDependentFile (encodeString fpQuery)
-  mapM_ qAddDependentFile (encodeString <$> toList schemas)
+  qAddDependentFile fpQuery
+  mapM_ qAddDependentFile (toList schemas)
   let query1 = mkName name
   let capName = case name of
         n : ame -> Data.Char.toUpper n : ame

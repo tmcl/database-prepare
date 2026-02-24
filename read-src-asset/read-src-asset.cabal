@@ -70,18 +70,12 @@ library
     hs-source-dirs:   src
 
     -- Other library packages from which modules are imported.
-    build-depends:    base 
-      , fsnotify
-      , aeson
+    build-depends:    base
       , transformers
       , mtl
       , sqlite-simple
       , row-types
       , bytestring
-      , system-fileio
-      , system-filepath
-      , stm
-      , string-interpolate
       , template-haskell
       , directory
       , containers
@@ -105,39 +99,3 @@ executable test-src-asset
       , sqlite-simple
       , text
       , time
-
-executable read-src-asset
-    -- Import common warning flags.
-    import:           warnings
-
-    -- .hs or .lhs file containing the Main module.
-    main-is:          Main.hs
-
-    -- LANGUAGE extensions used by modules in this package.
-    default-extensions: TypeOperators FlexibleContexts OverloadedStrings
-
-    -- Other library packages from which modules are imported.
-    build-depends:    base 
-      , fsnotify
-      , aeson
-      , read-src-asset
-      , sqlite-simple
-      , bytestring
-      , system-fileio
-      , system-filepath
-      , stm
-      , string-interpolate
-      , template-haskell
-      , directory
-      , containers
-      , time
-      , text
-      , direct-sqlite
-      , effectful
-      , effectful-core
-
-    -- Directories containing source files.
-    hs-source-dirs:   app
-
-    -- Base language which the package is written in.
-    default-language: GHC2021
