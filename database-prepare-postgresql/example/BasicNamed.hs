@@ -18,6 +18,7 @@ import Data.Int
 import Data.Row
 import Data.Row.Records
 import Data.Text
+import Data.Time
 import Database.PostgreSQL.LibPQ
 import Database.Postgres.Temp
 import Database.Prepare.Postgresql.TH
@@ -47,6 +48,7 @@ data BasicNamedQuery = BasicNamedQuery
   { bId :: Int32
   , bName :: Text
   , bEmail :: Text
+  , bCreatedAt :: UTCTime
   } deriving (Show)
 
 basicNamed :: Connection -> Int32 -> Text -> IO (Either PostgresError [BasicNamedQuery])
@@ -62,3 +64,4 @@ basicNamed conn idParam emailParam = do
        bId = qar .! #id
        bName = qar .! #name
        bEmail = qar .! #email
+       bCreatedAt = qar .! #created_at

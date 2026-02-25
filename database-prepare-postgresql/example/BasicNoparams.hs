@@ -22,6 +22,7 @@ import Database.PostgreSQL.LibPQ
 import Database.Postgres.Temp
 import Data.Int
 import Data.Text
+import Data.Time
 
 $( do
       Right pgdb <- runIO $ startConfig defaultConfig
@@ -54,6 +55,7 @@ data User = User
   { uId::UserId
   , uName::Text
   , uEmail::Text
+  , uCreatedAt::UTCTime
   } deriving (Show)
 
 queryUsers :: Connection -> IO (Either PostgresError [User])
@@ -68,3 +70,4 @@ queryUsers conn = do
        uId  = UserId $ qar .! #id
        uName = qar .! #name
        uEmail = qar .! #email
+       uCreatedAt = qar .! #created_at

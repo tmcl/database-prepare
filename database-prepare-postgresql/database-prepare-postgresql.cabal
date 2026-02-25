@@ -42,16 +42,19 @@ library
       Database.Prepare.Postgresql.TH
       Database.Prepare.Postgresql.ToField
       Database.Prepare.Postgresql.FromField
+      Database.Prepare.Postgresql.Time.Parser
 
     default-extensions: TypeOperators FlexibleContexts OverloadedStrings BlockArguments LambdaCase OverloadedRecordDot
 
     hs-source-dirs:   src
 
     build-depends:    base
+      , attoparsec
       , bytestring
       , containers
       , text
       , time
+      , time-compat
       , postgresql-libpq
       , effectful-core
       , transformers
