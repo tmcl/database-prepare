@@ -93,6 +93,7 @@
     withEachSystem
     // {
 
+      overlays.default = overlay;
       export = {
         database-prepare-sqlite = database-prepare-sqlite;
         database-prepare-postgresql = database-prepare-postgresql;
