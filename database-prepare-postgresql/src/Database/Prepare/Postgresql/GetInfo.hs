@@ -14,7 +14,6 @@ import Data.Text
 import Database.PostgreSQL.LibPQ
 import Data.ByteString
 import Control.Monad
-import Debug.Trace
 import Data.Map
 import Language.Haskell.TH.Syntax
 import Database.Prepare.Postgresql.FromField (builtinOids)
@@ -84,9 +83,7 @@ continueWith connection queryPath = do
            paramsCardinality <- liftIO $ nparams prepareDescription
            ssParams <- forM [0..paramsCardinality - 1] \ix -> do
                  paramType <- liftIO $ paramtype prepareDescription ix
-                 let ans = (ParamIndex ix, paramType)
-                 Debug.Trace.traceShowM ans
-                 pure ans
+                 pure (ParamIndex ix, paramType)
 
            colsCardinality <- liftIO $ nfields prepareDescription
            ssResults <- prepareColumnInfo colsCardinality prepareDescription
@@ -107,6 +104,4 @@ prepareColumnInfo colsCardinality result =
                  Nothing -> fail (Prelude.unwords ["could not identify sqltype for", Prelude.show colType])
                  Just it -> pure $ Data.Text.pack it
              let colComparableInfo = ComparableColumnInfo{..}
-             let ans = ColumnInfo {..}
-             Debug.Trace.traceShowM ans
-             pure (colIndex, ans)
+             pure (colIndex, ColumnInfo {..})
