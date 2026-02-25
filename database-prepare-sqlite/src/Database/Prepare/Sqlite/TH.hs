@@ -10,7 +10,6 @@
 
 module Database.Prepare.Sqlite.TH where
 
-import Control.Monad.State.Strict
 import Data.Char
 import Data.Function
 import Data.List
@@ -20,6 +19,7 @@ import Data.Text
 import Data.Text.Encoding
 import Data.Traversable
 import Database.SQLite.Simple
+import Database.SQLite.Simple.FromRow (fieldWith)
 import Database.SQLite.Simple.Internal
 import Database.SQLite3.Direct qualified
 import Database.Prepare.Sqlite.GetInfo
@@ -100,7 +100,6 @@ embedSqlite schemas fpQuery name = do
                     buildArg :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Type
                     buildArg (_ix, mname) = [t|$(pure $ LitT $ StrTyLit $ (Data.Text.unpack . txtUtf8) mname) .== Field|]
                     recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> results)
-                rec = mkName "rec"
                 resultsInstance =
                   instanceD @Q
                     (pure [])
@@ -109,28 +108,19 @@ embedSqlite schemas fpQuery name = do
                         'fromRow
                         [ clause @Q
                             []
-                            ( normalB $
-                                doE $
-                                  [ bindS (varP countColumns) [|RP $ lift get|],
-                                    noBindS [|RP $ lift $ put ($(numCols), [])|],
-                                    letS [funD columns [clause [] (normalB [|snd $(pure $ VarE countColumns)|]) []]],
-                                    letS [funD rec [clause [] (normalB builtRecords) []]],
-                                    noBindS [|pure $ $(pure $ ConE resultsTyNam) $(pure $ VarE rec)|]
-                                  ]
+                            ( normalB $ doE $
+                                bindings ++ [noBindS [|pure $ $(conE resultsTyNam) $(builtRecord)|]]
                             )
                             []
                         ]
                     ]
                   where
-                    numCols = litE $ IntegerL $ fromIntegral $ Data.List.length results
-                    countColumns = mkName "countColumns"
-                    columns = mkName "columns"
-                    builtRecords = Data.List.foldr recordBuilder [|Data.Row.Records.empty|] results
-                    recordBuilder :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Exp -> Q Exp
-                    recordBuilder (Database.SQLite3.Direct.ColumnIndex ix, utf8) rest =
-                      let fieldName = strUtf8 utf8
-                          ixE = litE $ IntegerL $ fromIntegral ix
-                       in [|$(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) .== Field ($(varE columns) !! $(ixE)) $(ixE) .+ $rest|]
+                    fieldNames = [mkName ("f" <> Prelude.show i) | i <- [0 .. Data.List.length results - 1]]
+                    bindings = [bindS (varP fn) [|fieldWith pure|] | fn <- fieldNames]
+                    builtRecord = Data.List.foldr recordBuilder [|Data.Row.Records.empty|] (Data.List.zip fieldNames results)
+                    recordBuilder (fn, (_ix, utf8)) rest =
+                      let nm = strUtf8 utf8
+                      in [|$(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit nm)) .== $(varE fn) .+ $rest|]
 
       let toNamedParamsVarName = mkName ("toNamed" <> capName <> "Params")
       let implementation = case (params, results) of

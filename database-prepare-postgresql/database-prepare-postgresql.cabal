@@ -36,6 +36,7 @@ library
 
     exposed-modules:
       Database.Prepare.Postgresql.GetInfo
+      Database.Prepare.Postgresql.PgType
       Database.Prepare.Postgresql.TH
       Database.Prepare.Postgresql.ToField
       Database.Prepare.Postgresql.FromField

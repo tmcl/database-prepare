@@ -1,39 +1,25 @@
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
 module Database.Prepare.Postgresql.FromField where
 
-import Data.Kind
 import Data.Text
 import Data.Text.Encoding
 import Database.PostgreSQL.LibPQ
 import Data.ByteString
 import Data.Proxy
-import GHC.TypeLits
 import Data.Text.Encoding.Error
 import Data.Bifunctor
+import GHC.TypeLits
 import Data.Int
 import Text.Read
 import Data.Time
-
-type family PgParam (oid::Symbol) :: Data.Kind.Type
+import Database.Prepare.Postgresql.PgType
 
 data ParserError = Utf8Exception UnicodeException | Unimplemented | NoParse
   deriving (Show)
 
-class FromField (oid::Symbol) where
-  fromField :: Proxy oid -> Format -> ByteString -> Either ParserError (PgParam oid)
-
-type instance PgParam "int4" = Int32
-type instance PgParam "text" = Data.Text.Text
-type instance PgParam "timestamptz" = UTCTime
-
-builtinOids :: Natural -> Maybe String
-builtinOids = \case
-  23 -> Just "int4"
-  25 -> Just "text"
-  1184 -> Just "timestamptz"
-  _ -> Nothing
+class FromField (pgTypeName::Symbol) where
+  fromField :: Proxy pgTypeName -> Format -> ByteString -> Either ParserError (PgType pgTypeName)
 
 instance FromField "timestamptz" where
   fromField :: Proxy "timestamptz" -> Format -> ByteString -> Either ParserError UTCTime

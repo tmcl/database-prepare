@@ -10,23 +10,24 @@
 {-# LANGUAGE DataKinds #-}
 module Database.Prepare.Postgresql.TH where
 
-import Data.Map
-import Database.Prepare.Postgresql.ToField
-import Database.Prepare.Postgresql.FromField
 import Control.Monad
 import Database.PostgreSQL.LibPQ
+import Database.Prepare.Postgresql.FromField
 import Database.Prepare.Postgresql.GetInfo
+import Database.Prepare.Postgresql.PgType
+import Database.Prepare.Postgresql.ToField
+import Data.ByteString
 import Data.Char
 import Data.List
+import Data.Map
+import Data.Maybe
+import Data.Proxy
 import Data.Row.Records
+import Data.Text
+import Data.Text.Encoding
 import Data.Traversable
-import Data.ByteString
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Quasi(qAddDependentFile))
-import Data.Proxy
-import Data.Text.Encoding
-import Data.Text
-import Data.Maybe
 
 data SchemaIssue = ColumnMismatch { shouldBe :: Data.Map.Map Int ComparableColumnInfo, isActually :: Data.Map.Map Int ComparableColumnInfo }
  deriving (Show, Eq)
@@ -53,7 +54,7 @@ executeQuery conn sql format namedParams expectedFields handleRow  =
                 Just "" -> do
                   numRows <- ntuples res
                   numFields <- nfields res
-                  actualFields <- fmap colComparableInfo <$> prepareColumnInfo numFields res
+                  actualFields <- fmap colComparableInfo <$> prepareColumnInfo conn numFields res
                   if numFields /= Database.PostgreSQL.LibPQ.Col (fromIntegral expectedColumns) || actualFields /= expectedFields
                     then pure $ Left (SchemaIssue $ ColumnMismatch expectedFields actualFields)
                     else do
@@ -75,7 +76,7 @@ embedPostgres connection fpQuery name = do
   sqlite <- runIO do continueWith connection fpQuery
   case sqlite of
         Left (cs, err) -> fail (Prelude.show cs <> Prelude.show err)
-        Right stmt@(PostgresStatement _ bs params expectedFields) -> do
+        Right stmt@(PostgresStatement _ bs paramInfos expectedFields) -> do
            let connName = mkName "conn"
            let conn = pure $ VarE $ connName
            runIO $ print stmt
@@ -91,10 +92,9 @@ embedPostgres connection fpQuery name = do
                       app <- appT [t|Rec|] recTyArgs
                       pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
                     buildArg :: ColumnInfo -> Q Language.Haskell.TH.Type
-                    buildArg columnInfo = [t| $(pure $ LitT $ StrTyLit $ maybe (Prelude.show columnInfo.colComparableInfo.colIndex) (Data.Text.unpack . decodeUtf8) columnInfo.colComparableInfo.colName) .== Database.Prepare.Postgresql.FromField.PgParam $(pure $ LitT $ StrTyLit tyName )|]
+                    buildArg columnInfo = [t| $(pure $ LitT $ StrTyLit $ maybe (Prelude.show columnInfo.colComparableInfo.colIndex) (Data.Text.unpack . decodeUtf8) columnInfo.colComparableInfo.colName) .== Database.Prepare.Postgresql.PgType.PgType $(pure $ LitT $ StrTyLit tyName )|]
                        where
-                          tyName = fromMaybe "" $ builtinOids $ fromIntegral oid
-                          Oid oid = columnInfo.colType
+                          tyName = Data.Text.unpack columnInfo.colComparableInfo.colSqlType
                     recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> expectedFields)
 
            let
@@ -133,7 +133,7 @@ embedPostgres connection fpQuery name = do
                                  labelName = Data.Text.unpack . decodeUtf8 $ fromJust a.colName
                                  sqlType = Data.Text.unpack $ a.colSqlType
 
-           case params of
+           case paramInfos of
                   [] -> do
                       Data.Traversable.sequence [ rowType
                           , resultsTy
@@ -155,10 +155,10 @@ embedPostgres connection fpQuery name = do
                             bangTy = do
                               app <- recTyArgs
                               pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
-                            buildArg :: (ParamIndex, Oid) -> Q Language.Haskell.TH.Type
-                            buildArg (_ix, Oid oid) = [t| Database.Prepare.Postgresql.ToField.PgParam $(pure $ LitT $ StrTyLit tyName ) |]
-                              where tyName = fromMaybe "" $ builtinOids $ fromIntegral oid
-                            recTyArgs = Data.List.foldl appT (tupleT (Data.List.length params)) (buildArg <$> params)
+                            buildArg :: ParamInfo -> Q Language.Haskell.TH.Type
+                            buildArg info = [t| Database.Prepare.Postgresql.PgType.PgType $(pure $ LitT $ StrTyLit tyName ) |]
+                              where tyName = Data.Text.unpack info.paramTypeName
+                            recTyArgs = Data.List.foldl appT (tupleT (Data.List.length paramInfos)) (buildArg <$> paramInfos)
                   _ -> do
                       Data.Traversable.sequence [ rowType
                           , toNamedParamsTy
@@ -171,17 +171,18 @@ embedPostgres connection fpQuery name = do
                           ]
                     where
 
-                      paramToNamedParam :: ParamIndex -> Oid -> Name -> Q Exp
-                      paramToNamedParam _ix (Oid oid) param = do
-                                [|  Just (Database.Prepare.Postgresql.ToField.toField ( $(appTypeE proxy (litT $ strTyLit tyname))) $(varE param) ) |]
+                      paramToNamedParam :: ParamInfo -> Name -> Q Exp
+                      paramToNamedParam info param = do
+                                [|  Just (let (encoded, fmt) = Database.Prepare.Postgresql.ToField.toField ( $(appTypeE proxy (litT $ strTyLit tyname))) $(varE param)
+                                         in (Oid $(litE $ integerL oidNum), encoded, fmt)) |]
                               where
-                                oid' = fromIntegral oid
-                                tyname = fromMaybe "unknown" $ builtinOids oid'
+                                tyname = Data.Text.unpack info.paramTypeName
+                                oidNum = case info.paramOid of Oid n -> fromIntegral n :: Integer
 
 
                       toNamedParamsDef  :: Q Dec
                       toNamedParamsDef = funD toNamedParamsVarName [clause @Q [pure $ ConP paramsTyNam [] [VarP paramsVarName]]  (normalB do
-                          let eachParam =  (uncurry paramToNamedParam) <$> params
+                          let eachParam =  paramToNamedParam <$> paramInfos
                           appE (makeListApplier eachParam) (varE paramsVarName)
                           )  []]
                       toNamedParamsVarName = mkName ("toNamed" <> capName <> "Params")
@@ -198,10 +199,10 @@ embedPostgres connection fpQuery name = do
                             bangTy = do
                               app <- recTyArgs
                               pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
-                            buildArg :: (ParamIndex, Oid) -> Q Language.Haskell.TH.Type
-                            buildArg (_ix, Oid oid) = [t| Database.Prepare.Postgresql.ToField.PgParam $(pure $ LitT $ StrTyLit tyName ) |]
-                              where tyName = fromMaybe "" $ builtinOids $ fromIntegral oid
-                            recTyArgs = Data.List.foldl appT (tupleT (Data.List.length params)) (buildArg <$> params)
+                            buildArg :: ParamInfo -> Q Language.Haskell.TH.Type
+                            buildArg info = [t| Database.Prepare.Postgresql.PgType.PgType $(pure $ LitT $ StrTyLit tyName ) |]
+                              where tyName = Data.Text.unpack info.paramTypeName
+                            recTyArgs = Data.List.foldl appT (tupleT (Data.List.length paramInfos)) (buildArg <$> paramInfos)
 
 
 
