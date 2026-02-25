@@ -75,11 +75,6 @@ embedPostgres connection fpQuery name = do
   sqlite <- runIO do continueWith connection fpQuery
   case sqlite of
         Left (cs, err) -> fail (Prelude.show cs <> Prelude.show err)
-        Right (JustSql bs) -> do
-           let connName = mkName "conn"
-           let conn = pure $ VarE $ connName
-           let c = clause @Q [pure $ VarP connName] (normalB [| Database.PostgreSQL.LibPQ.exec $(conn) bs |]) []
-           Data.Traversable.sequence [sigD (query1) [t| Connection -> IO () |]  , funD query1 [c]]
         Right stmt@(PostgresStatement _ bs params expectedFields) -> do
            let connName = mkName "conn"
            let conn = pure $ VarE $ connName

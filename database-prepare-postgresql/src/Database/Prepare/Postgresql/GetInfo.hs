@@ -22,7 +22,7 @@ import Database.Prepare.Postgresql.FromField (builtinOids)
 newtype ParamIndex = ParamIndex Int
   deriving (Show, Eq, Num)
 
-data PostgresStatement = JustSql Data.ByteString.ByteString | PostgresStatement
+data PostgresStatement = PostgresStatement
   { ssfp :: FilePath
   , sssql :: ByteString
   , ssParams :: [(ParamIndex, Oid)]
