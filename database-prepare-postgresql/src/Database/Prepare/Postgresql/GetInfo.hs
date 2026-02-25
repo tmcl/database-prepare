@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DataKinds #-}
 
-module Database.Prepare.Postgresql.GetInfo (continueWith, SqliteStatement(..), ParamIndex(..), ColumnInfo(..), prepareColumnInfo, ComparableColumnInfo(..)) where
+module Database.Prepare.Postgresql.GetInfo (continueWith, PostgresStatement(..), ParamIndex(..), ColumnInfo(..), prepareColumnInfo, ComparableColumnInfo(..)) where
 
 import Data.Function
 import GHC.Stack
@@ -22,7 +22,7 @@ import Database.Prepare.Postgresql.FromField (builtinOids)
 newtype ParamIndex = ParamIndex Int
   deriving (Show, Eq, Num)
 
-data SqliteStatement = JustSql Data.ByteString.ByteString | SqliteStatement
+data PostgresStatement = JustSql Data.ByteString.ByteString | PostgresStatement
   { ssfp :: FilePath
   , sssql :: ByteString
   , ssParams :: [(ParamIndex, Oid)]
@@ -69,12 +69,12 @@ checkError conn = \case
 data GetSqlInfoError = ErrorMessage ByteString | FailedWithoutError | ErrorStatus ExecStatus (Maybe ByteString)
   deriving (Show)
 
-continueWith :: (HasCallStack) => Connection -> FilePath -> IO (Either (CallStack, GetSqlInfoError) SqliteStatement)
+continueWith :: (HasCallStack) => Connection -> FilePath -> IO (Either (CallStack, GetSqlInfoError) PostgresStatement)
 continueWith connection queryPath = do
           Effectful.runEff (runError applySchema)
 
    where
-    applySchema ::  Eff [Effectful.Error.Static.Error GetSqlInfoError, IOE] SqliteStatement
+    applySchema ::  Eff [Effectful.Error.Static.Error GetSqlInfoError, IOE] PostgresStatement
     applySchema = do
        sql <- liftIO $ Data.ByteString.readFile queryPath
 
@@ -91,7 +91,7 @@ continueWith connection queryPath = do
            colsCardinality <- liftIO $ nfields prepareDescription
            ssResults <- prepareColumnInfo colsCardinality prepareDescription
 
-           pure SqliteStatement {sssql = sql  , ssfp = queryPath, .. }
+           pure PostgresStatement {sssql = sql  , ssfp = queryPath, .. }
 
 prepareColumnInfo :: MonadIO f => Column -> Result -> f (Map Int ColumnInfo)
 prepareColumnInfo colsCardinality result =

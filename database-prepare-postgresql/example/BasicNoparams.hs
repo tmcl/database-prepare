@@ -43,7 +43,7 @@ $( do
                Nothing -> pure ()
                Just "" -> pure ()
                Just err -> fail . Prelude.show $ err
-      f <- embedSqlite conn "test-data/query/basic-noparams.sql" "queryAll"
+      f <- embedPostgres conn "test-data/query/basic-noparams.sql" "queryAll"
       runIO $ finish conn
       runIO $ stop pgdb
       pure f

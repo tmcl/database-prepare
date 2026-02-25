@@ -35,9 +35,9 @@ data PostgresError = NoResultError (Maybe ByteString) | ResultError ExecStatus (
   | SchemaIssue SchemaIssue
  deriving (Show, Eq)
 
-fromRight :: Either a b -> b
-fromRight = \case
-  Left _e -> error "unexpected left"
+parseOrDie :: String -> Either ParserError b -> b
+parseOrDie context = \case
+  Left e -> error (context <> ": " <> Prelude.show e)
   Right r -> r
 
 executeQuery :: Connection -> ByteString -> Format -> [Maybe (Oid, ByteString, Format)] -> Data.Map.Map Int ComparableColumnInfo -> (Result -> Database.PostgreSQL.LibPQ.Row -> IO a) -> IO (Either PostgresError [a])
@@ -65,8 +65,8 @@ executeQuery conn sql format namedParams expectedFields handleRow  =
           expectedColumns = Data.List.length expectedFields
 
 
-embedSqlite :: Connection -> FilePath -> String -> Q [Dec]
-embedSqlite connection fpQuery name = do
+embedPostgres :: Connection -> FilePath -> String -> Q [Dec]
+embedPostgres connection fpQuery name = do
   qAddDependentFile fpQuery
   let query1 = mkName name
   let capName = case name of
@@ -80,7 +80,7 @@ embedSqlite connection fpQuery name = do
            let conn = pure $ VarE $ connName
            let c = clause @Q [pure $ VarP connName] (normalB [| Database.PostgreSQL.LibPQ.exec $(conn) bs |]) []
            Data.Traversable.sequence [sigD (query1) [t| Connection -> IO () |]  , funD query1 [c]]
-        Right stmt@(SqliteStatement _ bs params expectedFields) -> do
+        Right stmt@(PostgresStatement _ bs params expectedFields) -> do
            let connName = mkName "conn"
            let conn = pure $ VarE $ connName
            runIO $ print stmt
@@ -127,7 +127,8 @@ embedSqlite connection fpQuery name = do
                                       raw <- newName "raw"
                                       it <- newName "it"
                                       one <- bindS (varP raw) [|getvalue $(varE $ mkName "result") $(varE $ mkName "rowNum") $(litE $ integerL (fromIntegral a.colIndex)) |]
-                                      two <- letS [valD (varP it) (normalB [|fromRight $ fromField $(appTypeE proxy (litT $ strTyLit sqlType)) $(outFormat) (fromJust $(varE raw))|]) []]
+                                      let context = "column " <> labelName <> " (pg type " <> sqlType <> ")"
+                                      two <- letS [valD (varP it) (normalB [|parseOrDie $(stringE context) $ fromField $(appTypeE proxy (litT $ strTyLit sqlType)) $(outFormat) (fromJust $(varE raw))|]) []]
                                       three <- noBindS [| pure $  Data.Row.Records.extend $(labelE labelName) $(varE it) $(varE theName) |]
                                       pure [one, two, three]
 

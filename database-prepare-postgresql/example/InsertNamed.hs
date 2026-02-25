@@ -36,7 +36,7 @@ $( do
                Nothing -> pure ()
                Just "" -> pure ()
                Just err -> fail . Prelude.show $ err
-      f <- embedSqlite conn "test-data/query/insert-named.sql" "insertNamed"
+      f <- embedPostgres conn "test-data/query/insert-named.sql" "insertNamed"
       runIO $ finish conn
       runIO $ stop pgdb
       pure f

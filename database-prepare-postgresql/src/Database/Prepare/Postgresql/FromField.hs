@@ -19,6 +19,7 @@ import Data.Time
 type family PgParam (oid::Symbol) :: Data.Kind.Type
 
 data ParserError = Utf8Exception UnicodeException | Unimplemented | NoParse
+  deriving (Show)
 
 class FromField (oid::Symbol) where
   fromField :: Proxy oid -> Format -> ByteString -> Either ParserError (PgParam oid)
