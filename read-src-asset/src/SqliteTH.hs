@@ -60,32 +60,13 @@ embedSqlite schemas fpQuery name = do
           Left e -> fail (Prelude.show e)
           Right txt -> pure txt
       runIO $ print stmt
-      -- let stringName = \case
-      --         s | Just rest <- Data.Text.stripPrefix "$" s -> rest
-      --           | Just rest <- Data.Text.stripPrefix "@" s -> rest
-      --           | Just rest <- Data.Text.stripPrefix "?" s -> "param" <> rest
-      --              | otherwise -> s
-      -- let buildName ix = \case
-      --      Nothing -> "param" <> show ix
-      --      Just (Utf8 utf8) -> Data.Text.unpack $ stringName (decodeUtf8 utf8)
-      -- let mkField :: ParamIndex -> Maybe Utf8 -> Q (Name, Bang, Type)
-      --     mkField ix mName = do
-      --         ty <- [t| SQLData |]
-      --         pure (mkName $ buildName ix mName, Bang NoSourceUnpackedness NoSourceStrictness, ty)
-      -- let recordFields :: [Q VarBangType]  = uncurry mkField <$> params
       let paramsTyNam = mkName (capName <> "Params")
       let resultsTyNam = mkName (capName <> "Result")
-      -- let paramsTyNam1 = mkName "Params1"
       let paramsVarName = mkName "params"
-      -- let parametersTy = dataD @Q (pure []) paramsTyNam1 [] Nothing [(recC paramsTyNam1  recordFields)] []
-      let (parametersTy2, implementation) = case params of
-            [] -> ([], [queryUnnamedType, queryUnnamedImplementation])
-              where
-                queryUnnamedType = sigD (query1) [t|Connection -> IO [$(pure $ ConT resultsTyNam)]|]
-                queryUnnamedImplementation =
-                  let c = clause @Q [pure $ VarP connName] (normalB [|Database.SQLite.Simple.query_ $(conn) (Query txtSql)|]) []
-                   in funD query1 [c]
-            _ -> ([rowType, toNamedParamsTy, toNamedParamsDef], [queryNamedType, queryNamedImplementation])
+
+      let paramsDecs = case params of
+            [] -> []
+            _ -> [rowType, toNamedParamsTy, toNamedParamsDef]
               where
                 paramToNamedParam :: Database.SQLite3.Direct.ParamIndex -> Maybe Database.SQLite3.Direct.Utf8 -> Q Exp
                 paramToNamedParam ix = \case
@@ -98,10 +79,6 @@ embedSqlite schemas fpQuery name = do
                 toNamedParamsVarName = mkName ("toNamed" <> capName <> "Params")
                 toNamedParamsTy :: Q Dec
                 toNamedParamsTy = sigD toNamedParamsVarName [t|$(pure $ ConT paramsTyNam) -> [NamedParam]|]
-                queryNamedType = sigD (query1) [t|Connection -> $(pure $ ConT paramsTyNam) -> IO [$(pure $ ConT resultsTyNam)]|]
-                queryNamedImplementation =
-                  let c = clause @Q [pure $ VarP connName, pure $ VarP paramsVarName] (normalB [|Database.SQLite.Simple.queryNamed $(conn) (Query txtSql) ($(varE toNamedParamsVarName) $(varE paramsVarName))|]) []
-                   in funD query1 [c]
                 rowType = newtypeD @Q (pure []) paramsTyNam [] Nothing (normalC paramsTyNam [bangTy]) [derivClause Nothing [[t|Show|], [t|Eq|]]]
                   where
                     bangTy = do
@@ -111,45 +88,63 @@ embedSqlite schemas fpQuery name = do
                     buildArg (ix, mname) = [t|$(pure $ LitT $ StrTyLit $ maybe (Prelude.show ix) (Data.Text.unpack . txtUtf8) mname) .== SQLData|]
                     recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> params)
 
-      let resultsTy = newtypeD @Q (pure []) resultsTyNam [] Nothing (normalC resultsTyNam [bangTy]) [derivClause Nothing []]
-            where
-              bangTy = do
-                app <- appT [t|Rec|] recTyArgs
-                pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
-              buildArg :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Type
-              buildArg (_ix, mname) = [t|$(pure $ LitT $ StrTyLit $ (Data.Text.unpack . txtUtf8) mname) .== Field|]
-              recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> results)
+      let resultsDecs = case results of
+            [] -> []
+            _ -> [resultsTy, resultsInstance]
+              where
+                resultsTy = newtypeD @Q (pure []) resultsTyNam [] Nothing (normalC resultsTyNam [bangTy]) [derivClause Nothing []]
+                  where
+                    bangTy = do
+                      app <- appT [t|Rec|] recTyArgs
+                      pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
+                    buildArg :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Type
+                    buildArg (_ix, mname) = [t|$(pure $ LitT $ StrTyLit $ (Data.Text.unpack . txtUtf8) mname) .== Field|]
+                    recTyArgs = Data.List.foldr1 (\ty1 ty2 -> infixT ty1 (mkName "Data.Row.Records..+") ty2) (buildArg <$> results)
+                rec = mkName "rec"
+                resultsInstance =
+                  instanceD @Q
+                    (pure [])
+                    [t|FromRow $(pure $ ConT resultsTyNam)|]
+                    [ funD
+                        'fromRow
+                        [ clause @Q
+                            []
+                            ( normalB $
+                                doE $
+                                  [ bindS (varP countColumns) [|RP $ lift get|],
+                                    noBindS [|RP $ lift $ put ($(numCols), [])|],
+                                    letS [funD columns [clause [] (normalB [|snd $(pure $ VarE countColumns)|]) []]],
+                                    letS [funD rec [clause [] (normalB builtRecords) []]],
+                                    noBindS [|pure $ $(pure $ ConE resultsTyNam) $(pure $ VarE rec)|]
+                                  ]
+                            )
+                            []
+                        ]
+                    ]
+                  where
+                    numCols = litE $ IntegerL $ fromIntegral $ Data.List.length results
+                    countColumns = mkName "countColumns"
+                    columns = mkName "columns"
+                    builtRecords = Data.List.foldr recordBuilder [|Data.Row.Records.empty|] results
+                    recordBuilder :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Exp -> Q Exp
+                    recordBuilder (Database.SQLite3.Direct.ColumnIndex ix, utf8) rest =
+                      let fieldName = strUtf8 utf8
+                          ixE = litE $ IntegerL $ fromIntegral ix
+                       in [|$(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) .== Field ($(varE columns) !! $(ixE)) $(ixE) .+ $rest|]
 
-      let rec = mkName "rec"
-      let resultsInstance =
-            instanceD @Q
-              (pure [])
-              [t|FromRow $(pure $ ConT resultsTyNam)|]
-              [ funD
-                  'fromRow
-                  [ clause @Q
-                      []
-                      ( normalB $
-                          doE $
-                            [ bindS (varP countColumns) [|RP $ lift get|],
-                              noBindS [|RP $ lift $ put ($(numCols), [])|],
-                              letS [funD columns [clause [] (normalB [|snd $(pure $ VarE countColumns)|]) []]],
-                              letS [funD rec [clause [] (normalB builtRecords) []]],
-                              noBindS [|pure $ $(pure $ ConE resultsTyNam) $(pure $ VarE rec)|]
-                            ]
-                      )
-                      []
-                  ]
-              ]
-            where
-              numCols = litE $ IntegerL $ fromIntegral $ Data.List.length results
-              countColumns = mkName "countColumns"
-              columns = mkName "columns"
-              builtRecords = Data.List.foldr recordBuilder [|Data.Row.Records.empty|] results
-              recordBuilder :: (Database.SQLite3.Direct.ColumnIndex, Database.SQLite3.Direct.Utf8) -> Q Exp -> Q Exp
-              recordBuilder (Database.SQLite3.Direct.ColumnIndex ix, utf8) rest =
-                let fieldName = strUtf8 utf8
-                    ixE = litE $ IntegerL $ fromIntegral ix
-                 in [|$(appTypeE (conE 'Label) (pure $ LitT $ StrTyLit fieldName)) .== Field ($(varE columns) !! $(ixE)) $(ixE) .+ $rest|]
+      let toNamedParamsVarName = mkName ("toNamed" <> capName <> "Params")
+      let implementation = case (params, results) of
+            ([], []) -> [sigD query1 [t|Connection -> IO ()|], funD query1 [c]]
+              where
+                c = clause @Q [pure $ VarP connName] (normalB [|Database.SQLite.Simple.execute_ $(conn) (Query txtSql)|]) []
+            ([], _) -> [sigD query1 [t|Connection -> IO [$(pure $ ConT resultsTyNam)]|], funD query1 [c]]
+              where
+                c = clause @Q [pure $ VarP connName] (normalB [|Database.SQLite.Simple.query_ $(conn) (Query txtSql)|]) []
+            (_, []) -> [sigD query1 [t|Connection -> $(pure $ ConT paramsTyNam) -> IO ()|], funD query1 [c]]
+              where
+                c = clause @Q [pure $ VarP connName, pure $ VarP paramsVarName] (normalB [|Database.SQLite.Simple.executeNamed $(conn) (Query txtSql) ($(varE toNamedParamsVarName) $(varE paramsVarName))|]) []
+            (_, _) -> [sigD query1 [t|Connection -> $(pure $ ConT paramsTyNam) -> IO [$(pure $ ConT resultsTyNam)]|], funD query1 [c]]
+              where
+                c = clause @Q [pure $ VarP connName, pure $ VarP paramsVarName] (normalB [|Database.SQLite.Simple.queryNamed $(conn) (Query txtSql) ($(varE toNamedParamsVarName) $(varE paramsVarName))|]) []
 
-      Data.Traversable.sequence (parametersTy2 <> [resultsTy, resultsInstance] <> implementation)
+      Data.Traversable.sequence (paramsDecs <> resultsDecs <> implementation)
