@@ -10,10 +10,15 @@
 
 module Main where
 
+import BasicNamed
+import BasicNoparams
+import DeleteAll
+import DeleteNamed
 import InsertNamed
 import Database.Postgres.Temp
 import Data.ByteString
 import Database.PostgreSQL.LibPQ
+import Data.Tuple
 
 main :: IO()
 main = () <$ with \pgdb -> do
@@ -30,3 +35,7 @@ main = () <$ with \pgdb -> do
                Just "" -> pure ()
                Just err -> fail . Prelude.show $ err
       print =<< insertUser conn UserParams { email = "alice@email.example", name = "Alice" }
+      print =<< basicNamed conn 1 "alice@email.example"
+      print =<< queryUsers conn
+      print =<< deleteUser conn (DeleteUserParams (MkSolo 1))
+      print =<< deleteAll conn

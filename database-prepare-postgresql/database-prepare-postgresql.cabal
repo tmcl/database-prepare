@@ -25,6 +25,8 @@ extra-source-files:
   test-data/query/basic-noparams.sql
   test-data/query/basic-numbered.sql
   test-data/query/basic-unnamed.sql
+  test-data/query/delete-all.sql
+  test-data/query/delete-named.sql
   test-data/query/insert-named.sql
   test-data/schema/schema.sql
 
@@ -62,7 +64,7 @@ library
 executable test-src-asset
     import:           warnings
     main-is: Extrafile.hs
-    other-modules: BasicNamed InsertNamed BasicNoparams
+    other-modules: BasicNamed BasicNoparams DeleteAll DeleteNamed InsertNamed
     hs-source-dirs:   example
     default-language: GHC2021
     build-depends:  base
@@ -74,3 +76,16 @@ executable test-src-asset
        , text
        , time
        , bytestring
+
+test-suite runtime-errors
+    import:           warnings
+    type:             exitcode-stdio-1.0
+    main-is:          RuntimeErrors.hs
+    hs-source-dirs:   test
+    default-language: GHC2021
+    build-depends:  base
+       , bytestring
+       , containers
+       , tmp-postgres
+       , database-prepare-postgresql
+       , postgresql-libpq

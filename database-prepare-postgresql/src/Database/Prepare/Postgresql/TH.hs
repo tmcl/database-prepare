@@ -134,6 +134,20 @@ embedPostgres connection fpQuery name = do
                                  sqlType = Data.Text.unpack $ a.colSqlType
 
            case paramInfos of
+                  -- No params, no results (e.g. DELETE without RETURNING)
+                  [] | Data.Map.null expectedFields -> do
+                      Data.Traversable.sequence [ queryNamedType
+                          , queryNamedImplementation
+                          ]
+                    where
+                      queryNamedType = sigD query1 [t| Connection -> IO (Either PostgresError ()) |]
+                      expectedFieldsComparable = colComparableInfo <$> expectedFields
+                      queryNamedImplementation =
+                           let c = clause @Q [pure $ VarP connName] (normalB
+                                 [| fmap (fmap (const ())) $ executeQuery $(conn) bs $(outFormat) [] expectedFieldsComparable (\_ _ -> pure ()) |]) []
+                           in funD query1 [c]
+
+                  -- No params, has results (e.g. SELECT without WHERE)
                   [] -> do
                       Data.Traversable.sequence [ rowType
                           , resultsTy
@@ -159,6 +173,50 @@ embedPostgres connection fpQuery name = do
                             buildArg info = [t| Database.Prepare.Postgresql.PgType.PgType $(pure $ LitT $ StrTyLit tyName ) |]
                               where tyName = Data.Text.unpack info.paramTypeName
                             recTyArgs = Data.List.foldl appT (tupleT (Data.List.length paramInfos)) (buildArg <$> paramInfos)
+
+                  -- Has params, no results (e.g. DELETE with WHERE)
+                  _ | Data.Map.null expectedFields -> do
+                      Data.Traversable.sequence [ rowType
+                          , toNamedParamsTy
+                          , toNamedParamsDef
+                          , queryNamedType
+                          , queryNamedImplementation
+                          ]
+                    where
+
+                      paramToNamedParam :: ParamInfo -> Name -> Q Exp
+                      paramToNamedParam info param = do
+                                [|  Just (let (encoded, fmt) = Database.Prepare.Postgresql.ToField.toField ( $(appTypeE proxy (litT $ strTyLit tyname))) $(varE param)
+                                         in (Oid $(litE $ integerL oidNum), encoded, fmt)) |]
+                              where
+                                tyname = Data.Text.unpack info.paramTypeName
+                                oidNum = case info.paramOid of Oid n -> fromIntegral n :: Integer
+
+                      toNamedParamsDef  :: Q Dec
+                      toNamedParamsDef = funD toNamedParamsVarName [clause @Q [pure $ ConP paramsTyNam [] [VarP paramsVarName]]  (normalB do
+                          let eachParam =  paramToNamedParam <$> paramInfos
+                          appE (makeListApplier eachParam) (varE paramsVarName)
+                          )  []]
+                      toNamedParamsVarName = mkName ("toNamed" <> capName <> "Params")
+                      toNamedParamsTy :: Q Dec
+                      toNamedParamsTy = sigD toNamedParamsVarName [t| $(pure $ ConT paramsTyNam) -> [Maybe (Oid, ByteString, Format)] |]
+                      queryNamedType = sigD query1 [t| Connection -> $(pure $ ConT paramsTyNam) -> IO (Either PostgresError ()) |]
+                      expectedFieldsComparable = colComparableInfo <$> expectedFields
+                      queryNamedImplementation =
+                           let c = clause @Q [pure $ VarP connName, pure $ VarP paramsVarName] (normalB
+                                 [| fmap (fmap (const ())) $ executeQuery $(conn) bs $(outFormat) ($(varE toNamedParamsVarName) $(varE paramsVarName)) expectedFieldsComparable (\_ _ -> pure ()) |]) []
+                           in funD query1 [c]
+                      rowType = newtypeD @Q (pure []) paramsTyNam [] Nothing (normalC paramsTyNam [bangTy]) [derivClause Nothing [ [t|Show|], [t|Eq|]] ]
+                          where
+                            bangTy = do
+                              app <- recTyArgs
+                              pure (Bang NoSourceUnpackedness NoSourceStrictness, app)
+                            buildArg :: ParamInfo -> Q Language.Haskell.TH.Type
+                            buildArg info = [t| Database.Prepare.Postgresql.PgType.PgType $(pure $ LitT $ StrTyLit tyName ) |]
+                              where tyName = Data.Text.unpack info.paramTypeName
+                            recTyArgs = Data.List.foldl appT (tupleT (Data.List.length paramInfos)) (buildArg <$> paramInfos)
+
+                  -- Has params, has results (e.g. INSERT RETURNING, SELECT with WHERE)
                   _ -> do
                       Data.Traversable.sequence [ rowType
                           , toNamedParamsTy
