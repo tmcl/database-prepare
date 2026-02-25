@@ -7,6 +7,6 @@
 
 module DeleteNamed where
 
-import SqliteTH
+import Database.Prepare.Sqlite.TH
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/delete-named.sql" "deleteUser")

@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module MigrateSchema where
+module Database.Prepare.Sqlite.MigrateSchema where
 
 import Control.Monad
 import Data.Bifunctor

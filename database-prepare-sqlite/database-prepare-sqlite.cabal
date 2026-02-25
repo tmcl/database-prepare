@@ -1,0 +1,57 @@
+cabal-version:      3.0
+name:               database-prepare-sqlite
+version:            0.1.0.0
+license:            NONE
+author:             Tristan Mc Leay
+maintainer:         tristan@cassowary.org
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+extra-source-files:
+  test-data/query/basic-named.sql
+  test-data/query/basic-noparams.sql
+  test-data/query/basic-numbered.sql
+  test-data/query/basic-unnamed.sql
+  test-data/query/delete-all.sql
+  test-data/query/delete-named.sql
+  test-data/query/insert-named.sql
+  test-data/schema/schema.sql
+
+common warnings
+    ghc-options: -Wall -Werror
+
+library
+    import:           warnings
+    exposed-modules:
+      Database.Prepare.Sqlite.MigrateSchema
+      Database.Prepare.Sqlite.GetInfo
+      Database.Prepare.Sqlite.TH
+    default-extensions: TypeOperators FlexibleContexts OverloadedStrings BlockArguments LambdaCase OverloadedRecordDot
+    hs-source-dirs:   src
+    build-depends:    base
+      , transformers
+      , mtl
+      , sqlite-simple
+      , row-types
+      , bytestring
+      , template-haskell
+      , directory
+      , containers
+      , time
+      , text
+      , direct-sqlite
+      , effectful
+      , effectful-core
+    default-language: GHC2021
+
+executable test-src-asset
+    import:           warnings
+    main-is: Extrafile.hs
+    other-modules: BasicNamed InsertNamed BasicNoparams DeleteNamed DeleteAll
+    hs-source-dirs:   example
+    default-language: GHC2021
+    build-depends:  base
+      , row-types
+      , database-prepare-sqlite
+      , sqlite-simple
+      , text
+      , time

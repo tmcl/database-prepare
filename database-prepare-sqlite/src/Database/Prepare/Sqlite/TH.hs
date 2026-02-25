@@ -8,7 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 
-module SqliteTH where
+module Database.Prepare.Sqlite.TH where
 
 import Control.Monad.State.Strict
 import Data.Char
@@ -22,7 +22,7 @@ import Data.Traversable
 import Database.SQLite.Simple
 import Database.SQLite.Simple.Internal
 import Database.SQLite3.Direct qualified
-import GetSqliteInfo
+import Database.Prepare.Sqlite.GetInfo
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Quasi (qAddDependentFile))
 

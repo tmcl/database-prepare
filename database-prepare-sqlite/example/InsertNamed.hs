@@ -8,6 +8,6 @@
 module InsertNamed where
 
 import Data.Row.Records
-import SqliteTH
+import Database.Prepare.Sqlite.TH
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/insert-named.sql" "insertNamed")

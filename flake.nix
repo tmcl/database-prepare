@@ -1,5 +1,5 @@
 {
-  description = "A very basic flake";
+  description = "database-prepare: compile-time SQL interface libraries";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
@@ -17,12 +17,26 @@
       overlay = final: prev: {
         haskellPackages = prev.haskellPackages.extend (
           self: super: {
-            read-src-asset = read-src-asset self;
+            database-prepare-sqlite = database-prepare-sqlite self;
+            database-prepare-postgresql = database-prepare-postgresql self;
+       tmp-postgres =   final.lib.pipe (self.callCabal2nix "tmp-postgres" (prev.fetchFromGitHub {
+          owner = "jfischoff";
+          repo = "tmp-postgres";
+          rev = "7f2467a6d6d5f6db7eed59919a6773fe006cf22b";
+          sha256="dE1OQN7I4Lxy6RBdLCvm75Z9D/Hu+9G4ejV2pEtvL1A=";
+        }) {}) [
+          (final.haskell.lib.compose.addBuildDepend final.postgresql_17)
+          (final.haskell.lib.compose.addBuildDepend final.procps)
+          (final.haskell.lib.compose.dontCheck)
+        ];
+
           }
         );
       };
-      read-src-asset =
-        haskellPackages: haskellPackages.callCabal2nix "read-src-asset" ./read-src-asset { };
+      database-prepare-sqlite =
+        haskellPackages: haskellPackages.callCabal2nix "database-prepare-sqlite" ./database-prepare-sqlite { };
+      database-prepare-postgresql =
+        haskellPackages: haskellPackages.callCabal2nix "database-prepare-postgresql" ./database-prepare-postgresql { };
       withEachSystem = flake-utils.lib.eachDefaultSystem (
         system:
         let
@@ -30,7 +44,10 @@
             inherit system;
             overlays = [ overlay ];
           };
-          myPax = [ (pkgs.haskellPackages.read-src-asset) ];
+          myPax = [
+            pkgs.haskellPackages.database-prepare-sqlite
+            pkgs.haskellPackages.database-prepare-postgresql
+          ];
 
           idea-properties = pkgs.writeText "idea.properties" ''
             idea.config.path=./.IdeaIC/config
@@ -43,7 +60,11 @@
         in
         {
           overlays = overlay;
-          packages.default = pkgs.haskellPackages.read-src-asset;
+          packages = {
+            default = pkgs.haskellPackages.database-prepare-sqlite;
+            database-prepare-sqlite = pkgs.haskellPackages.database-prepare-sqlite;
+            database-prepare-postgresql = pkgs.haskellPackages.database-prepare-postgresql;
+          };
           devShell = pkgs.mkShell {
             WEBIDE_PROPERTIES = idea-properties;
             IDEA_PROPERTIES = idea-properties;
@@ -57,11 +78,12 @@
               pkgs.nixfmt
               (pkgs.haskellPackages.ghcWithHoogle (
                 haskellPax:
-                builtins.filter (a: a.pname != "read-src-asset") (
+                builtins.filter (a: a.pname != "database-prepare-sqlite" && a.pname != "database-prepare-postgresql") (
                   pkgs.lib.lists.concatMap (a: a.getBuildInputs.haskellBuildInputs) myPax
                 )
               ))
               pkgs.sqlite-interactive
+              pkgs.postgresql
             ];
           };
 
@@ -71,7 +93,10 @@
     withEachSystem
     // {
 
-      export = read-src-asset;
+      export = {
+        database-prepare-sqlite = database-prepare-sqlite;
+        database-prepare-postgresql = database-prepare-postgresql;
+      };
 
     };
 }

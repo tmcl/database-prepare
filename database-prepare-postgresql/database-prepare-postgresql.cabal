@@ -1,0 +1,75 @@
+cabal-version:      3.0
+name:               database-prepare-postgresql
+version:            0.1.0.0
+
+synopsis: TemplateHaskell code to build an interface between Haskell and sql for postgres
+
+description: Uses TemplateHaskell to connect to a postgres db at compiletime.
+  Uses the output of this to build Haskell actions to query the database in a typesafe manner.
+  Unlike competitors, it does not seek to take over your database nor make you write SQL
+  in its own way, but in principle supports any query on any schema, however the query
+  and the schema are written.
+
+license:            NONE
+
+author:             Tristan Mc Leay
+
+maintainer:         tristan@cassowary.org
+
+build-type:         Simple
+
+extra-doc-files:    CHANGELOG.md
+
+extra-source-files:
+  test-data/query/basic-named.sql
+  test-data/query/basic-noparams.sql
+  test-data/query/basic-numbered.sql
+  test-data/query/basic-unnamed.sql
+  test-data/query/insert-named.sql
+  test-data/schema/schema.sql
+
+common warnings
+    ghc-options: -Wall -Werror
+
+library
+    import:           warnings
+
+    exposed-modules:
+      Database.Prepare.Postgresql.GetInfo
+      Database.Prepare.Postgresql.TH
+      Database.Prepare.Postgresql.ToField
+      Database.Prepare.Postgresql.FromField
+
+    default-extensions: TypeOperators FlexibleContexts OverloadedStrings BlockArguments LambdaCase OverloadedRecordDot
+
+    hs-source-dirs:   src
+
+    build-depends:    base
+      , bytestring
+      , containers
+      , text
+      , time
+      , postgresql-libpq
+      , effectful-core
+      , transformers
+      , mtl
+      , row-types
+      , template-haskell
+
+    default-language: GHC2021
+
+executable test-src-asset
+    import:           warnings
+    main-is: Extrafile.hs
+    other-modules: BasicNamed InsertNamed BasicNoparams
+    hs-source-dirs:   example
+    default-language: GHC2021
+    build-depends:  base
+       , row-types
+       , template-haskell
+       , tmp-postgres
+       , database-prepare-postgresql
+       , postgresql-libpq
+       , text
+       , time
+       , bytestring

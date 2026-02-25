@@ -13,6 +13,6 @@
 module BasicNoparams where
 
 import Data.Row.Records
-import SqliteTH
+import Database.Prepare.Sqlite.TH
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-noparams.sql" "queryAll")

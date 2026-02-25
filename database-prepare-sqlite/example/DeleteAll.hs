@@ -4,6 +4,6 @@
 
 module DeleteAll where
 
-import SqliteTH
+import Database.Prepare.Sqlite.TH
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/delete-all.sql" "deleteAll")

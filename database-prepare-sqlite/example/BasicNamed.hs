@@ -19,7 +19,7 @@ import Database.SQLite.Simple
 import Database.SQLite.Simple.FromField
 import Database.SQLite.Simple.Ok
 import Database.SQLite.Simple.ToField
-import SqliteTH
+import Database.Prepare.Sqlite.TH
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-named.sql" "queryAll")
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-named.sql" "distraction")

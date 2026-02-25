@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module GetSqliteInfo (continueWith, SqliteStatement (..)) where
+module Database.Prepare.Sqlite.GetInfo (continueWith, SqliteStatement (..)) where
 
 import Control.Monad
 import Data.Bifunctor
@@ -18,7 +18,7 @@ import Effectful
 import Effectful.Error.Static
 import Effectful.Exception
 import GHC.Stack
-import MigrateSchema
+import Database.Prepare.Sqlite.MigrateSchema
 
 data SqliteStatement
   = JustSql Data.ByteString.ByteString
