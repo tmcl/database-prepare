@@ -10,11 +10,13 @@
 
 module Main where
 
+import BasicMapped
 import BasicNamed
 import BasicNoparams
 import DeleteAll
 import DeleteNamed
 import InsertNamed
+import MappedTypes
 import Database.Postgres.Temp
 import Data.ByteString
 import Database.PostgreSQL.LibPQ
@@ -37,5 +39,6 @@ main = () <$ with \pgdb -> do
       print =<< insertUser conn UserParams { email = "alice@email.example", name = "Alice" }
       print =<< basicNamed conn 1 "alice@email.example"
       print =<< queryUsers conn
+      print =<< searchUsers conn (UserSearch 1 "alice@email.example")
       print =<< deleteUser conn (DeleteUserParams (MkSolo 1))
       print =<< deleteAll conn

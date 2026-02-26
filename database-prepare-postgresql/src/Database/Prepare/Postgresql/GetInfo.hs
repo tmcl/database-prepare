@@ -19,7 +19,7 @@ import Data.Map
 import Language.Haskell.TH.Syntax
 
 newtype ParamIndex = ParamIndex Int
-  deriving (Show, Eq, Num)
+  deriving (Show, Eq, Ord, Num)
 
 data ParamInfo = ParamInfo
   { paramIndex :: ParamIndex
