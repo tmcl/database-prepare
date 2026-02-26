@@ -46,7 +46,7 @@ library
 executable test-src-asset
     import:           warnings
     main-is: Extrafile.hs
-    other-modules: BasicNamed InsertNamed BasicNoparams DeleteNamed DeleteAll
+    other-modules: BasicMapped BasicNamed InsertNamed BasicNoparams DeleteNamed DeleteAll MappedTypes
     hs-source-dirs:   example
     default-language: GHC2021
     build-depends:  base

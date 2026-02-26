@@ -10,6 +10,7 @@
 
 module Main where
 
+import BasicMapped
 import BasicNamed
 import Control.Monad
 import Data.Row.Records
@@ -19,6 +20,7 @@ import Database.SQLite.Simple.Ok
 import DeleteAll
 import DeleteNamed
 import InsertNamed
+import MappedTypes
 import Database.Prepare.Sqlite.TH
 
 $(embedSqlite ["test-data/schema/schema.sql"] "test-data/schema/schema.sql" "buildSchema")
@@ -32,6 +34,7 @@ main = do
     let qp = BasicNamed.QueryParams {qpEmail = Nothing, qpId = ok2maybe (fromField $ ix .! #id)}
     basicNamed conn qp
       >>= print
+  print =<< searchUsers conn (UserSearch (Just 1) Nothing)
   deleteUser conn $ DeleteUserParams (Label @"$id" .== SQLInteger 1 .+ Data.Row.Records.empty)
   deleteAll conn
 
