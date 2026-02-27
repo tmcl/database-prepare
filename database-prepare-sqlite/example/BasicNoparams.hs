@@ -15,4 +15,4 @@ module BasicNoparams where
 import Data.Row.Records
 import Database.Prepare.Sqlite.TH
 
-$(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-noparams.sql" "queryAll")
+$(embedSqlite "test-data/schema" "test-data/query/basic-noparams.sql" "queryAll")

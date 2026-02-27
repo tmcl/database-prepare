@@ -10,4 +10,4 @@ module InsertNamed where
 import Data.Row.Records
 import Database.Prepare.Sqlite.TH
 
-$(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/insert-named.sql" "insertNamed")
+$(embedSqlite "test-data/schema" "test-data/query/insert-named.sql" "insertNamed")

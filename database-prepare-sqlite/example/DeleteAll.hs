@@ -6,4 +6,4 @@ module DeleteAll where
 
 import Database.Prepare.Sqlite.TH
 
-$(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/delete-all.sql" "deleteAll")
+$(embedSqlite "test-data/schema" "test-data/query/delete-all.sql" "deleteAll")

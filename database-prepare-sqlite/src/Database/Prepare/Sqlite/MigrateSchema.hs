@@ -1,5 +1,4 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -7,10 +6,14 @@ module Database.Prepare.Sqlite.MigrateSchema where
 
 import Control.Monad
 import Data.Bifunctor
-import Data.ByteString
+import Data.ByteString 
+import Data.List
 import Database.SQLite3.Direct
 import Effectful
 import Effectful.Error.Static
+import System.Directory 
+import System.FilePath 
+
 type DirectSqlError = (Database.SQLite3.Direct.Error, Utf8)
 
 liftEIO :: (Show a, Effectful.Error.Static.Error a :> es, IOE :> es) => IO (Either a b) -> Eff es b
@@ -19,8 +22,14 @@ liftEIO mab =
     Left a -> throwError a
     Right b -> pure b
 
-migrateSchema :: (Effectful.Error.Static.Error e :> es, IOE :> es, Show e) => (DirectSqlError -> e) -> Database -> [FilePath] -> Eff es ()
-migrateSchema errorWrapper conn files =
+listSchemaFiles :: FilePath -> IO [FilePath]
+listSchemaFiles dir = do
+  entries <- listDirectory dir
+  pure $ Data.List.sort [dir </> e | e <- entries, takeExtension e == ".sql"]
+
+migrateSchema :: (Effectful.Error.Static.Error e :> es, IOE :> es, Show e) => (DirectSqlError -> e) -> Database -> FilePath -> Eff es ()
+migrateSchema errorWrapper conn schemaDir = do
+  files <- liftIO $ listSchemaFiles schemaDir
   forM_ files \file -> do
     sql <- liftIO $ Utf8 <$> Data.ByteString.readFile file
     liftEIO (first errorWrapper <$> exec conn sql)

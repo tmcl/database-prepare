@@ -21,8 +21,8 @@ import Database.SQLite.Simple.Ok
 import Database.SQLite.Simple.ToField
 import Database.Prepare.Sqlite.TH
 
-$(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-named.sql" "queryAll")
-$(embedSqlite ["test-data/schema/schema.sql"] "test-data/query/basic-named.sql" "distraction")
+$(embedSqlite "test-data/schema" "test-data/query/basic-named.sql" "queryAll")
+$(embedSqlite "test-data/schema" "test-data/query/basic-named.sql" "distraction")
 
 data User = User {uId :: Int, name :: Text, email :: Text, created :: UTCTime}
   deriving (Show, Eq)

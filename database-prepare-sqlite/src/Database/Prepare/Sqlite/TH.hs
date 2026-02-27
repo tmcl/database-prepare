@@ -18,6 +18,8 @@ module Database.Prepare.Sqlite.TH (
   -- * Mapped API
   embedSqliteMapped, deriveMappingType,
   GFieldPairs(..), fieldPairs,
+  -- * Schema migration
+  embedSchemaMigration,
 ) where
 
 import Data.Char
@@ -26,7 +28,6 @@ import Data.Function
 import Data.List
 import Data.Map qualified
 import Data.Row.Records
-import Data.Set
 import Data.Text
 import Data.Text.Encoding
 import Data.Traversable
@@ -35,9 +36,11 @@ import Database.SQLite.Simple.FromRow (fieldWith)
 import Database.SQLite.Simple.Internal
 import Database.SQLite3.Direct qualified
 import Database.Prepare.Sqlite.GetInfo
+import Database.Prepare.Sqlite.MigrateSchema (listSchemaFiles)
 import GHC.Generics qualified
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax (Quasi (qAddDependentFile))
+import System.FilePath (takeFileName)
 
 strUtf8 :: Database.SQLite3.Direct.Utf8 -> String
 strUtf8 (Database.SQLite3.Direct.Utf8 a) = Data.Text.unpack $ decodeUtf8 a
@@ -45,26 +48,18 @@ strUtf8 (Database.SQLite3.Direct.Utf8 a) = Data.Text.unpack $ decodeUtf8 a
 txtUtf8 :: Database.SQLite3.Direct.Utf8 -> Text
 txtUtf8 (Database.SQLite3.Direct.Utf8 a) = decodeUtf8 a
 
-embedSqlite :: Data.Set.Set FilePath -> FilePath -> String -> Q [Dec]
-embedSqlite schemas fpQuery name = do
+embedSqlite :: FilePath -> FilePath -> String -> Q [Dec]
+embedSqlite schemaDir fpQuery name = do
   qAddDependentFile fpQuery
-  mapM_ qAddDependentFile (toList schemas)
+  schemaFiles <- runIO $ listSchemaFiles schemaDir
+  mapM_ qAddDependentFile schemaFiles
   let query1 = mkName name
   let capName = case name of
         n : ame -> Data.Char.toUpper n : ame
         _ -> name
-  sqlite <- runIO do continueWith schemas fpQuery
+  sqlite <- runIO do continueWith schemaDir fpQuery
   case sqlite of
     Left (cs, err) -> fail (Prelude.show cs <> Prelude.show err)
-    Right (JustSql bs) -> do
-      let connName = mkName "conn"
-      let conn = pure $ VarE $ connName
-      txtSql <-
-        decodeUtf8' bs & \case
-          Left e -> fail (Prelude.show e)
-          Right txt -> pure txt
-      let c = clause @Q [pure $ VarP connName] (normalB [|Database.SQLite.Simple.execute_ $(conn) (Query txtSql)|]) []
-      Data.Traversable.sequence [sigD (query1) [t|Connection -> IO ()|], funD query1 [c]]
     Right stmt@(SqliteStatement _ (Database.SQLite3.Direct.Utf8 bs) params results) -> do
       let connName = mkName "conn"
       let conn = pure $ VarE $ connName
@@ -339,28 +334,20 @@ generateSqliteParamList orderedParams = do
 -- embedSqliteMapped entry point
 -- ---------------------------------------------------------------------------
 
--- | Generate a query function that works directly with user-defined domain types,
--- without generating intermediate row-types. Uses compile-time mappings to verify
--- that field names match the SQL query's columns and parameters.
 embedSqliteMapped
-  :: Data.Set.Set FilePath
+  :: FilePath
   -> FilePath
-  -> String
   -> Maybe (Name, [(String, String)])
   -> Maybe (Name, [(String, String)])
-  -> Q [Dec]
-embedSqliteMapped schemas fpQuery name mParams mResults = do
+  -> Q Exp
+embedSqliteMapped schemaDir fpQuery mParams mResults = do
   qAddDependentFile fpQuery
-  mapM_ qAddDependentFile (toList schemas)
-  let query1 = mkName name
-      connName = mkName "conn"
-      conn = pure $ VarE connName
-      paramsVarName = mkName "params"
+  schemaFiles <- runIO $ listSchemaFiles schemaDir
+  mapM_ qAddDependentFile schemaFiles
 
-  sqliteResult <- runIO $ continueWith schemas fpQuery
+  sqliteResult <- runIO $ continueWith schemaDir fpQuery
   case sqliteResult of
     Left (cs, err) -> fail (Prelude.show cs <> Prelude.show err)
-    Right (JustSql _) -> fail "embedSqliteMapped: schema files should not be used with mapped types"
     Right stmt@(SqliteStatement _ (Database.SQLite3.Direct.Utf8 bs) paramNames resultCols) -> do
       txtSql <- decodeUtf8' bs & \case
         Left e -> fail (Prelude.show e)
@@ -368,46 +355,65 @@ embedSqliteMapped schemas fpQuery name mParams mResults = do
       runIO $ print stmt
 
       case (mParams, mResults) of
-        -- No params, no results
-        (Nothing, Nothing) -> do
-          let sig = sigD query1 [t| Connection -> IO () |]
-              def = funD query1 [clause [varP connName] (normalB
-                [| Database.SQLite.Simple.execute_ $(conn) (Query txtSql) |]) []]
-          Data.Traversable.sequence [sig, def]
+        (Nothing, Nothing) ->
+          [| \conn -> Database.SQLite.Simple.execute_ conn (Query txtSql) |]
 
-        -- No params, has results
         (Nothing, Just (resultTypeName, resultMapping)) -> do
           (resultConName, verifiedResults) <- verifySqliteResultMapping resultTypeName resultMapping resultCols
           rowParser <- generateRowParser resultConName verifiedResults
-          rowParserName <- newName "rowParser"
-          let sig = sigD query1 [t| Connection -> IO [$(conT resultTypeName)] |]
-              rowParserDef = valD (varP rowParserName) (normalB (pure rowParser)) []
-              def = funD query1 [clause [varP connName] (normalB
-                [| Database.SQLite.Simple.queryWith_ $(varE rowParserName) $(conn) (Query txtSql) |]) [rowParserDef]]
-          Data.Traversable.sequence [sig, def]
+          [| \conn -> Database.SQLite.Simple.queryWith_ $(pure rowParser) conn (Query txtSql) |]
 
-        -- Has params, no results
         (Just (paramTypeName, paramMapping), Nothing) -> do
           verifiedParams <- verifySqliteParamMapping paramTypeName paramMapping paramNames
           paramList <- generateSqliteParamList verifiedParams
-          paramListName <- newName "toParams"
-          let sig = sigD query1 [t| Connection -> $(conT paramTypeName) -> IO () |]
-              paramListDef = valD (varP paramListName) (normalB (pure paramList)) []
-              def = funD query1 [clause [varP connName, varP paramsVarName] (normalB
-                [| Database.SQLite.Simple.executeNamed $(conn) (Query txtSql) ($(varE paramListName) $(varE paramsVarName)) |]) [paramListDef]]
-          Data.Traversable.sequence [sig, def]
+          [| \conn params -> Database.SQLite.Simple.executeNamed conn (Query txtSql) ($(pure paramList) params) |]
 
-        -- Has params and results
         (Just (paramTypeName, paramMapping), Just (resultTypeName, resultMapping)) -> do
           (resultConName, verifiedResults) <- verifySqliteResultMapping resultTypeName resultMapping resultCols
           verifiedParams <- verifySqliteParamMapping paramTypeName paramMapping paramNames
           rowParser <- generateRowParser resultConName verifiedResults
           paramList <- generateSqliteParamList verifiedParams
-          rowParserName <- newName "rowParser"
-          paramListName <- newName "toParams"
-          let sig = sigD query1 [t| Connection -> $(conT paramTypeName) -> IO [$(conT resultTypeName)] |]
-              rowParserDef = valD (varP rowParserName) (normalB (pure rowParser)) []
-              paramListDef = valD (varP paramListName) (normalB (pure paramList)) []
-              def = funD query1 [clause [varP connName, varP paramsVarName] (normalB
-                [| Database.SQLite.Simple.queryNamedWith $(varE rowParserName) $(conn) (Query txtSql) ($(varE paramListName) $(varE paramsVarName)) |]) [rowParserDef, paramListDef]]
-          Data.Traversable.sequence [sig, def]
+          [| \conn params -> Database.SQLite.Simple.queryNamedWith $(pure rowParser) conn (Query txtSql) ($(pure paramList) params) |]
+
+
+-- ---------------------------------------------------------------------------
+-- Schema migration
+-- ---------------------------------------------------------------------------
+
+parseMigrationVersion :: FilePath -> Maybe Int
+parseMigrationVersion fp =
+  let base = takeFileName fp
+      (digits, rest) = Prelude.span isDigit base
+  in case (digits, rest) of
+    (_:_, '-':_) -> Just (read digits)
+    _ -> Nothing
+
+embedSchemaMigration :: FilePath -> Q Exp
+embedSchemaMigration schemaDir = do
+  files <- runIO $ listSchemaFiles schemaDir
+  fileContents <- forM files \fp -> do
+    qAddDependentFile fp
+    sqlStr <- runIO $ Prelude.readFile fp
+    let sql = Data.Text.pack sqlStr
+    pure (fp, sql, parseMigrationVersion fp)
+  connName <- newName "conn"
+  stmtLists <- forM fileContents \(_fp, sql, mVersion) ->
+    case mVersion of
+      Nothing ->
+        pure [noBindS [| Database.SQLite.Simple.execute_ $(varE connName) (Query sql) |]]
+      Just n -> do
+        vName <- newName "currentVersion"
+        let pragmaSet = "pragma user_version = " <> Data.Text.pack (Prelude.show n)
+        pure
+          [ bindS [p| [Only $(varP vName)] |]
+                  [| (Database.SQLite.Simple.query_ $(varE connName) (Query ("pragma user_version" :: Text)) :: IO [Only Int]) |]
+          , noBindS [| when ($(varE vName) < ($(litE (integerL (fromIntegral n))) :: Int)) do
+                        Database.SQLite.Simple.execute_ $(varE connName) (Query sql)
+                        Database.SQLite.Simple.execute_ $(varE connName) (Query pragmaSet) |]
+          ]
+  let stmts = Prelude.concat stmtLists
+      finalStmts = case stmts of
+        [] -> [noBindS [| pure () |]]
+        _ -> stmts
+  body <- doE finalStmts
+  pure $ LamE [VarP connName] body

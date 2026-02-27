@@ -14,7 +14,7 @@ extra-source-files:
   test-data/query/delete-all.sql
   test-data/query/delete-named.sql
   test-data/query/insert-named.sql
-  test-data/schema/schema.sql
+  test-data/schema/001-init.sql
 
 common warnings
     ghc-options: -Wall -Werror
@@ -35,6 +35,7 @@ library
       , bytestring
       , template-haskell
       , directory
+      , filepath
       , containers
       , time
       , text

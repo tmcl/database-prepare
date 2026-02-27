@@ -23,12 +23,13 @@ import InsertNamed
 import MappedTypes
 import Database.Prepare.Sqlite.TH
 
-$(embedSqlite ["test-data/schema/schema.sql"] "test-data/schema/schema.sql" "buildSchema")
+migrateSchema :: Connection -> IO ()
+migrateSchema = $(embedSchemaMigration "test-data/schema")
 
 main :: IO ()
 main = do
   conn <- open "test-data/test.db"
-  buildSchema conn
+  migrateSchema conn
   ixes <- insertNamed conn $ InsertNamedParams (Label @"$name" .== SQLText "Alice" .+ Label @"$email" .== SQLText "olooe@aoice.example" .+ Data.Row.Records.empty)
   forM_ ixes \(InsertNamedResult ix) -> do
     let qp = BasicNamed.QueryParams {qpEmail = Nothing, qpId = ok2maybe (fromField $ ix .! #id)}
