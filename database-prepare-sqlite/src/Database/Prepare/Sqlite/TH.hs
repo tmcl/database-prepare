@@ -313,18 +313,17 @@ verifySqliteParamMapping typeName mapping paramNames = do
 -- Code generation for mapped types
 -- ---------------------------------------------------------------------------
 
--- | Generate a @FromRow@ instance for the user's result type.
--- Reads columns in order using @field@ and constructs the record.
-generateFromRowInstance :: Name -> Name -> [(Name, Database.SQLite3.Direct.ColumnIndex)] -> Q Dec
-generateFromRowInstance typeName conName orderedFields = do
+-- | Generate a @RowParser@ expression that reads columns in order
+-- using @field@ and constructs the user's record type.
+generateRowParser :: Name -> [(Name, Database.SQLite3.Direct.ColumnIndex)] -> Q Exp
+generateRowParser conName orderedFields = do
   vars <- forM orderedFields \(fieldName, _) -> do
     v <- newName ("v_" <> nameBase fieldName)
     pure (fieldName, v)
   let bindings = [bindS (varP v) [| field |] | (_, v) <- vars]
       recFields = [(fn, VarE v) | (fn, v) <- vars]
       returnStmt = noBindS [| pure $(pure $ RecConE conName recFields) |]
-  instanceD (pure []) [t| FromRow $(conT typeName) |]
-    [ funD 'fromRow [clause [] (normalB (doE (bindings <> [returnStmt]))) []] ]
+  doE (bindings <> [returnStmt])
 
 -- | Generate a lambda @\\params -> [NamedParam]@ that converts
 -- the user's param record into a list of named params for sqlite-simple.
@@ -379,11 +378,13 @@ embedSqliteMapped schemas fpQuery name mParams mResults = do
         -- No params, has results
         (Nothing, Just (resultTypeName, resultMapping)) -> do
           (resultConName, verifiedResults) <- verifySqliteResultMapping resultTypeName resultMapping resultCols
-          fromRowInst <- generateFromRowInstance resultTypeName resultConName verifiedResults
+          rowParser <- generateRowParser resultConName verifiedResults
+          rowParserName <- newName "rowParser"
           let sig = sigD query1 [t| Connection -> IO [$(conT resultTypeName)] |]
+              rowParserDef = valD (varP rowParserName) (normalB (pure rowParser)) []
               def = funD query1 [clause [varP connName] (normalB
-                [| Database.SQLite.Simple.query_ $(conn) (Query txtSql) |]) []]
-          (\a b -> [fromRowInst, a, b]) <$> sig <*> def
+                [| Database.SQLite.Simple.queryWith_ $(varE rowParserName) $(conn) (Query txtSql) |]) [rowParserDef]]
+          Data.Traversable.sequence [sig, def]
 
         -- Has params, no results
         (Just (paramTypeName, paramMapping), Nothing) -> do
@@ -400,11 +401,13 @@ embedSqliteMapped schemas fpQuery name mParams mResults = do
         (Just (paramTypeName, paramMapping), Just (resultTypeName, resultMapping)) -> do
           (resultConName, verifiedResults) <- verifySqliteResultMapping resultTypeName resultMapping resultCols
           verifiedParams <- verifySqliteParamMapping paramTypeName paramMapping paramNames
-          fromRowInst <- generateFromRowInstance resultTypeName resultConName verifiedResults
+          rowParser <- generateRowParser resultConName verifiedResults
           paramList <- generateSqliteParamList verifiedParams
+          rowParserName <- newName "rowParser"
           paramListName <- newName "toParams"
           let sig = sigD query1 [t| Connection -> $(conT paramTypeName) -> IO [$(conT resultTypeName)] |]
+              rowParserDef = valD (varP rowParserName) (normalB (pure rowParser)) []
               paramListDef = valD (varP paramListName) (normalB (pure paramList)) []
               def = funD query1 [clause [varP connName, varP paramsVarName] (normalB
-                [| Database.SQLite.Simple.queryNamed $(conn) (Query txtSql) ($(varE paramListName) $(varE paramsVarName)) |]) [paramListDef]]
-          (\a b -> [fromRowInst, a, b]) <$> sig <*> def
+                [| Database.SQLite.Simple.queryNamedWith $(varE rowParserName) $(conn) (Query txtSql) ($(varE paramListName) $(varE paramsVarName)) |]) [rowParserDef, paramListDef]]
+          Data.Traversable.sequence [sig, def]

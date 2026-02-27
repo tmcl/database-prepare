@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE BlockArguments #-}
-{-# OPTIONS_GHC -ddump-splices -Wno-orphans #-}
+{-# OPTIONS_GHC -ddump-splices #-}
 
 module BasicMapped (searchUsers) where
 

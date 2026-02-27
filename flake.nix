@@ -19,6 +19,9 @@
           self: super: {
             database-prepare-sqlite = database-prepare-sqlite self;
             database-prepare-postgresql = database-prepare-postgresql self;
+       sqlite-simple =   final.lib.pipe super.sqlite-simple [
+          (final.haskell.lib.compose.appendPatch ./tmp/queryNamedWith2.patch)
+        ];
        tmp-postgres =   final.lib.pipe (self.callCabal2nix "tmp-postgres" (prev.fetchFromGitHub {
           owner = "jfischoff";
           repo = "tmp-postgres";
