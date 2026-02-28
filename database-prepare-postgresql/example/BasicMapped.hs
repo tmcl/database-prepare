@@ -12,9 +12,10 @@ import Database.PostgreSQL.LibPQ
 import Database.Postgres.Temp
 import Database.Prepare.Postgresql.TH
 import Language.Haskell.TH
-import MappedTypes 
+import MappedTypes
 
-$(do
+searchUsers :: Connection -> UserSearch -> IO (Either PostgresError [User])
+searchUsers = $(do
     Right pgdb <- runIO $ startConfig defaultConfig
     conn <- runIO $ connectdb (toConnectionString pgdb)
     schemaSql <- runIO $ Data.ByteString.readFile "test-data/schema/schema.sql"
@@ -28,7 +29,7 @@ $(do
              Nothing -> pure ()
              Just "" -> pure ()
              Just err -> fail . Prelude.show $ err
-    f <- embedPostgresMapped conn "test-data/query/basic-named.sql" "searchUsers"
+    f <- embedPostgresMapped conn "test-data/query/basic-named.sql"
       (Just (''UserSearch, fieldPairs userSearchParamMap))
       (Just (''User, fieldPairs userResultMap))
     runIO $ finish conn

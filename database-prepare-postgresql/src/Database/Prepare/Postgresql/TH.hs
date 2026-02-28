@@ -360,17 +360,23 @@ extractRecFields typeName = do
     _ -> fail $ nameBase typeName <> " must be a single-constructor record type"
 
 -- | Resolve what Haskell type a PgType maps to for the given SQL type name.
-resolvePgType :: String -> Q Language.Haskell.TH.Type
-resolvePgType sqlType = do
+resolvePgType :: String -> String -> Q Language.Haskell.TH.Type
+resolvePgType context sqlType = do
   insts <- reifyInstances ''PgType [LitT (StrTyLit sqlType)]
   case insts of
     [TySynInstD (TySynEqn _ _ rhs)] -> pure rhs
-    _ -> fail $ "No PgType instance for SQL type: " <> sqlType
+    _ -> fail $ "When processing a " <> context <> " could not resolve PgType instance for SQL type: " <> sqlType
+
+-- | Unwrap Maybe from a type, returning (innerType, True) if it was Maybe, (type, False) otherwise.
+unwrapMaybe :: Language.Haskell.TH.Type -> (Language.Haskell.TH.Type, Bool)
+unwrapMaybe (AppT (ConT n) inner) | n == ''Maybe = (inner, True)
+unwrapMaybe t = (t, False)
 
 -- | Verify a result mapping: every field in the Haskell type must map to a column
 -- in the query result, types must match, and every column must be covered.
 -- Returns fields ordered by column index for codegen.
-verifyResultMapping :: Name -> [(String, String)] -> Data.Map.Map Int ColumnInfo -> Q (Name, [(Name, ComparableColumnInfo, String)])
+-- The Bool in the result tuple indicates whether the field is nullable (Maybe).
+verifyResultMapping :: Name -> [(String, String)] -> Data.Map.Map Int ColumnInfo -> Q (Name, [(Name, ComparableColumnInfo, String, Bool)])
 verifyResultMapping typeName mapping columnInfoMap = do
   (conName, fields) <- extractRecFields typeName
   let mappingMap = Data.Map.fromList mapping
@@ -400,13 +406,14 @@ verifyResultMapping typeName mapping columnInfoMap = do
       (_, Nothing) -> fail $ "SQL column " <> sqlColName <> " not found in query result"
       (Just (fieldName, fieldType), Just colInfo) -> do
         let sqlType = Data.Text.unpack colInfo.colSqlType
-        expectedType <- resolvePgType sqlType
-        unless (fieldType == expectedType) $
+        expectedType <- resolvePgType "row type" sqlType
+        let (innerType, isNullable) = unwrapMaybe fieldType
+        unless (innerType == expectedType) $
           fail $ "Type mismatch for field " <> nameBase fieldName
             <> ": Haskell type is " <> pprint fieldType
             <> " but SQL column " <> sqlColName <> " (type " <> sqlType
             <> ") maps to " <> pprint expectedType
-        pure (fieldName, colInfo, sqlType)
+        pure (fieldName, colInfo, sqlType, isNullable)
 
   -- Check all columns are covered
   let mappedColNames = Data.Map.fromList [(snd pair, ()) | pair <- mapping]
@@ -418,12 +425,13 @@ verifyResultMapping typeName mapping columnInfoMap = do
           fail $ "SQL column " <> Data.Text.unpack (decodeUtf8 nm) <> " is not covered by any field mapping"
 
   -- Sort by column index
-  pure (conName, Data.List.sortOn (\(_, ci, _) -> ci.colIndex) verified)
+  pure (conName, Data.List.sortOn (\(_, ci, _, _) -> ci.colIndex) verified)
 
 -- | Verify a param mapping: every field maps to a valid $N parameter,
 -- types must match, and all params must be covered.
 -- Returns fields ordered by param index for codegen.
-verifyParamMapping :: Name -> [(String, String)] -> [ParamInfo] -> Q [(Name, ParamInfo)]
+-- The Bool in the result tuple indicates whether the param is nullable (Maybe).
+verifyParamMapping :: Name -> [(String, String)] -> [ParamInfo] -> Q [(Name, ParamInfo, Bool)]
 verifyParamMapping typeName mapping paramInfos = do
   (_conName, fields) <- extractRecFields typeName
   let fieldNameSet = Data.Map.fromList [(nameBase n, (n, t)) | (n, t) <- fields]
@@ -450,13 +458,14 @@ verifyParamMapping typeName mapping paramInfos = do
       (_, Nothing) -> fail $ "Param index $" <> Prelude.show (idx + 1) <> " does not exist in query"
       (Just (fieldName, fieldType), Just info) -> do
         let sqlType = Data.Text.unpack info.paramTypeName
-        expectedType <- resolvePgType sqlType
-        unless (fieldType == expectedType) $
+        expectedType <- resolvePgType "param type" sqlType
+        let (innerType, isNullable) = unwrapMaybe fieldType
+        unless (innerType == expectedType) $
           fail $ "Type mismatch for param field " <> nameBase fieldName
             <> ": Haskell type is " <> pprint fieldType
             <> " but $" <> Prelude.show (idx + 1) <> " (type " <> sqlType
             <> ") maps to " <> pprint expectedType
-        pure (fieldName, info)
+        pure (fieldName, info, isNullable)
 
   -- Check all params are covered
   let coveredIndices = Data.Map.fromList
@@ -469,7 +478,7 @@ verifyParamMapping typeName mapping paramInfos = do
       fail $ "Param $" <> Prelude.show (idx + 1) <> " is not covered by any field mapping"
 
   -- Sort by param index
-  pure $ Data.List.sortOn (\(_, info) -> info.paramIndex) verified
+  pure $ Data.List.sortOn (\(_, info, _) -> info.paramIndex) verified
 
 
 -- ---------------------------------------------------------------------------
@@ -478,13 +487,14 @@ verifyParamMapping typeName mapping paramInfos = do
 
 -- | Generate a lambda @\\result rowNum -> do { ... ; pure (ConE fields) }@
 -- that reads columns from a libpq Result into the user's record type.
-generateMappedBuildRow :: Name -> [(Name, ComparableColumnInfo, String)] -> Q Exp
+-- The Bool in each tuple indicates whether the field is nullable.
+generateMappedBuildRow :: Name -> [(Name, ComparableColumnInfo, String, Bool)] -> Q Exp
 generateMappedBuildRow conName orderedFields = do
   resultVar <- newName "result"
   rowNumVar <- newName "rowNum"
   let proxy = [| Data.Proxy.Proxy |]
       outFormat = [| Database.PostgreSQL.LibPQ.Text |]
-  stmts <- forM (Data.List.zip [0 :: Integer ..] orderedFields) \(_, (fieldName, colInfo, sqlType)) -> do
+  stmts <- forM orderedFields \(fieldName, colInfo, sqlType, isNullable) -> do
     raw <- newName "raw"
     val <- newName ("v_" <> nameBase fieldName)
     let colIdx = fromIntegral colInfo.colIndex :: Integer
@@ -492,8 +502,11 @@ generateMappedBuildRow conName orderedFields = do
                   <> " (pg type " <> sqlType <> ")"
     bindRaw <- bindS (varP raw)
       [| getvalue $(varE resultVar) $(varE rowNumVar) $(litE $ integerL colIdx) |]
-    letVal <- letS [valD (varP val) (normalB
-      [| parseOrDie $(stringE context) $ fromField $(appTypeE proxy (litT $ strTyLit sqlType)) $(outFormat) (fromJust $(varE raw)) |]) []]
+    letVal <- if isNullable
+      then letS [valD (varP val) (normalB
+        [| fmap (parseOrDie $(stringE context) . fromField $(appTypeE proxy (litT $ strTyLit sqlType)) $(outFormat)) $(varE raw) |]) []]
+      else letS [valD (varP val) (normalB
+        [| parseOrDie $(stringE context) $ fromField $(appTypeE proxy (litT $ strTyLit sqlType)) $(outFormat) (fromJust $(varE raw)) |]) []]
     pure (fieldName, val, [bindRaw, letVal])
   let allStmts = Prelude.concatMap (\(_, _, ss) -> ss) stmts
       recFields = [(fieldName, VarE val) | (fieldName, val, _) <- stmts]
@@ -502,15 +515,19 @@ generateMappedBuildRow conName orderedFields = do
 
 -- | Generate a lambda @\\params -> [Just (Oid n, encoded, fmt), ...]@
 -- that converts the user's param record into a list of encoded params.
-generateMappedParamList :: Name -> [(Name, ParamInfo)] -> Q Exp
+-- The Bool in each tuple indicates whether the param is nullable.
+generateMappedParamList :: Name -> [(Name, ParamInfo, Bool)] -> Q Exp
 generateMappedParamList _typeName orderedParams = do
   paramsVar <- newName "params"
   let proxy = [| Data.Proxy.Proxy |]
-  items <- forM orderedParams \(fieldName, info) -> do
+  items <- forM orderedParams \(fieldName, info, isNullable) -> do
     let tyname = Data.Text.unpack info.paramTypeName
         oidNum = case info.paramOid of Oid n -> fromIntegral n :: Integer
-    [| Just (let (encoded, fmt) = Database.Prepare.Postgresql.ToField.toField ($(appTypeE proxy (litT $ strTyLit tyname))) ($(varE fieldName) $(varE paramsVar))
-             in (Oid $(litE $ integerL oidNum), encoded, fmt)) |]
+    if isNullable
+      then [| fmap (\v -> let (encoded, fmt) = Database.Prepare.Postgresql.ToField.toField ($(appTypeE proxy (litT $ strTyLit tyname))) v
+                           in (Oid $(litE $ integerL oidNum), encoded, fmt)) ($(varE fieldName) $(varE paramsVar)) |]
+      else [| Just (let (encoded, fmt) = Database.Prepare.Postgresql.ToField.toField ($(appTypeE proxy (litT $ strTyLit tyname))) ($(varE fieldName) $(varE paramsVar))
+                     in (Oid $(litE $ integerL oidNum), encoded, fmt)) |]
   let body = ListE items
   pure $ LamE [VarP paramsVar] body
 
@@ -525,16 +542,12 @@ generateMappedParamList _typeName orderedParams = do
 embedPostgresMapped
   :: Connection
   -> FilePath
-  -> String
   -> Maybe (Name, [(String, String)])
   -> Maybe (Name, [(String, String)])
-  -> Q [Dec]
-embedPostgresMapped connection fpQuery name mParams mResults = do
+  -> Q Exp
+embedPostgresMapped connection fpQuery mParams mResults = do
   qAddDependentFile fpQuery
-  let query1 = mkName name
-      connName = mkName "conn"
-      conn = pure $ VarE connName
-      outFormat = [| Database.PostgreSQL.LibPQ.Text |]
+  let outFormat = [| Database.PostgreSQL.LibPQ.Text |]
 
   stmtResult <- runIO $ continueWith connection fpQuery
   case stmtResult of
@@ -545,34 +558,20 @@ embedPostgresMapped connection fpQuery name mParams mResults = do
 
       case (mParams, mResults) of
         -- No params, no results
-        (Nothing, Nothing) -> do
-          let sig = sigD query1 [t| Connection -> IO (Either PostgresError ()) |]
-              def = funD query1 [clause [varP connName] (normalB
-                [| fmap (fmap (const ())) $ executeQuery $(conn) bs $(outFormat) [] expectedFieldsComparable (\_ _ -> pure ()) |]) []]
-          Data.Traversable.sequence [sig, def]
+        (Nothing, Nothing) ->
+          [| \conn -> fmap (fmap (const ())) $ executeQuery conn bs $(outFormat) [] expectedFieldsComparable (\_ _ -> pure ()) |]
 
         -- No params, has results
         (Nothing, Just (resultTypeName, resultMapping)) -> do
           (resultConName, verified) <- verifyResultMapping resultTypeName resultMapping expectedFields
           buildRow <- generateMappedBuildRow resultConName verified
-          buildRowName <- newName "buildRow"
-          let sig = sigD query1 [t| Connection -> IO (Either PostgresError [$(conT resultTypeName)]) |]
-              buildRowDef = valD (varP buildRowName) (normalB (pure buildRow)) []
-              def = funD query1 [clause [varP connName] (normalB
-                [| executeQuery $(conn) bs $(outFormat) [] expectedFieldsComparable $(varE buildRowName) |]) [buildRowDef]]
-          Data.Traversable.sequence [sig, def]
+          [| \conn -> executeQuery conn bs $(outFormat) [] expectedFieldsComparable $(pure buildRow) |]
 
         -- Has params, no results
         (Just (paramTypeName, paramMapping), Nothing) -> do
           verified <- verifyParamMapping paramTypeName paramMapping paramInfos
           paramList <- generateMappedParamList paramTypeName verified
-          paramListName <- newName "toParams"
-          let paramsVarName = mkName "params"
-              sig = sigD query1 [t| Connection -> $(conT paramTypeName) -> IO (Either PostgresError ()) |]
-              paramListDef = valD (varP paramListName) (normalB (pure paramList)) []
-              def = funD query1 [clause [varP connName, varP paramsVarName] (normalB
-                [| fmap (fmap (const ())) $ executeQuery $(conn) bs $(outFormat) ($(varE paramListName) $(varE paramsVarName)) expectedFieldsComparable (\_ _ -> pure ()) |]) [paramListDef]]
-          Data.Traversable.sequence [sig, def]
+          [| \conn params -> fmap (fmap (const ())) $ executeQuery conn bs $(outFormat) ($(pure paramList) params) expectedFieldsComparable (\_ _ -> pure ()) |]
 
         -- Has params and results
         (Just (paramTypeName, paramMapping), Just (resultTypeName, resultMapping)) -> do
@@ -580,12 +579,4 @@ embedPostgresMapped connection fpQuery name mParams mResults = do
           verifiedParams <- verifyParamMapping paramTypeName paramMapping paramInfos
           buildRow <- generateMappedBuildRow resultConName verifiedResults
           paramList <- generateMappedParamList paramTypeName verifiedParams
-          buildRowName <- newName "buildRow"
-          paramListName <- newName "toParams"
-          let paramsVarName = mkName "params"
-              sig = sigD query1 [t| Connection -> $(conT paramTypeName) -> IO (Either PostgresError [$(conT resultTypeName)]) |]
-              buildRowDef = valD (varP buildRowName) (normalB (pure buildRow)) []
-              paramListDef = valD (varP paramListName) (normalB (pure paramList)) []
-              def = funD query1 [clause [varP connName, varP paramsVarName] (normalB
-                [| executeQuery $(conn) bs $(outFormat) ($(varE paramListName) $(varE paramsVarName)) expectedFieldsComparable $(varE buildRowName) |]) [buildRowDef, paramListDef]]
-          Data.Traversable.sequence [sig, def]
+          [| \conn params -> executeQuery conn bs $(outFormat) ($(pure paramList) params) expectedFieldsComparable $(pure buildRow) |]
