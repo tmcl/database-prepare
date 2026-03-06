@@ -34,6 +34,7 @@ import Data.Traversable
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow (fieldWith)
 import Database.SQLite.Simple.Internal
+import Database.SQLite3 qualified
 import Database.SQLite3.Direct qualified
 import Database.Prepare.Sqlite.GetInfo
 import Database.Prepare.Sqlite.MigrateSchema (listSchemaFiles)
@@ -400,7 +401,7 @@ embedSchemaMigration schemaDir = do
   stmtLists <- forM fileContents \(_fp, sql, mVersion) ->
     case mVersion of
       Nothing ->
-        pure [noBindS [| Database.SQLite.Simple.execute_ $(varE connName) (Query sql) |]]
+        pure [noBindS [| Database.SQLite3.exec (connectionHandle $(varE connName)) sql |]]
       Just n -> do
         vName <- newName "currentVersion"
         let pragmaSet = "pragma user_version = " <> Data.Text.pack (Prelude.show n)
@@ -408,8 +409,8 @@ embedSchemaMigration schemaDir = do
           [ bindS [p| [Only $(varP vName)] |]
                   [| (Database.SQLite.Simple.query_ $(varE connName) (Query ("pragma user_version" :: Text)) :: IO [Only Int]) |]
           , noBindS [| when ($(varE vName) < ($(litE (integerL (fromIntegral n))) :: Int)) do
-                        Database.SQLite.Simple.execute_ $(varE connName) (Query sql)
-                        Database.SQLite.Simple.execute_ $(varE connName) (Query pragmaSet) |]
+                        Database.SQLite3.exec (connectionHandle $(varE connName)) sql
+                        Database.SQLite3.exec (connectionHandle $(varE connName)) pragmaSet |]
           ]
   let stmts = Prelude.concat stmtLists
       finalStmts = case stmts of
