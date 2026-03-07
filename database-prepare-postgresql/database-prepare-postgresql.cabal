@@ -38,7 +38,6 @@ library
 
     exposed-modules:
       Database.Prepare.Postgresql.GetInfo
-      Database.Prepare.Postgresql.PgType
       Database.Prepare.Postgresql.TH
       Database.Prepare.Postgresql.ToField
       Database.Prepare.Postgresql.FromField
@@ -59,7 +58,6 @@ library
       , effectful-core
       , transformers
       , mtl
-      , row-types
       , template-haskell
 
     default-language: GHC2021
@@ -67,11 +65,10 @@ library
 executable test-src-asset
     import:           warnings
     main-is: Extrafile.hs
-    other-modules: BasicMapped BasicNamed BasicNoparams DeleteAll DeleteNamed InsertNamed MappedTypes
+    other-modules: BasicParams BasicNoparams DeleteAll DeleteParams InsertParams MappedTypes
     hs-source-dirs:   example
     default-language: GHC2021
     build-depends:  base
-       , row-types
        , template-haskell
        , tmp-postgres
        , database-prepare-postgresql

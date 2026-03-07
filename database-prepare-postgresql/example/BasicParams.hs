@@ -5,7 +5,7 @@
 {-# LANGUAGE BlockArguments #-}
 {-# OPTIONS_GHC -ddump-splices #-}
 
-module BasicMapped (searchUsers) where
+module BasicParams (searchUsers) where
 
 import Data.ByteString
 import Database.PostgreSQL.LibPQ
@@ -29,7 +29,7 @@ searchUsers = $(do
              Nothing -> pure ()
              Just "" -> pure ()
              Just err -> fail . Prelude.show $ err
-    f <- embedPostgresMapped conn "test-data/query/basic-named.sql"
+    f <- embedPostgres conn "test-data/query/basic-named.sql"
       (Just (''UserSearch, fieldPairs userSearchParamMap))
       (Just (''User, fieldPairs userResultMap))
     runIO $ finish conn

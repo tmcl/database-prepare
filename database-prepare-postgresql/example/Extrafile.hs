@@ -1,26 +1,18 @@
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
-import BasicMapped
-import BasicNamed
+import BasicParams
 import BasicNoparams
 import DeleteAll
-import DeleteNamed
-import InsertNamed
+import DeleteParams
+import InsertParams
 import MappedTypes
 import Database.Postgres.Temp
 import Data.ByteString
 import Database.PostgreSQL.LibPQ
-import Data.Tuple
 
 main :: IO()
 main = () <$ with \pgdb -> do
@@ -37,8 +29,7 @@ main = () <$ with \pgdb -> do
                Just "" -> pure ()
                Just err -> fail . Prelude.show $ err
       print =<< insertUser conn UserParams { email = "alice@email.example", name = "Alice" }
-      print =<< basicNamed conn 1 "alice@email.example"
       print =<< queryUsers conn
       print =<< searchUsers conn (UserSearch 1 "alice@email.example")
-      print =<< deleteUser conn (DeleteUserParams (MkSolo 1))
+      print =<< deleteUser conn DeleteUserParams { dupId = 1 }
       print =<< deleteAll conn

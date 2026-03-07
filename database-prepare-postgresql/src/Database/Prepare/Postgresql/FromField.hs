@@ -1,5 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Database.Prepare.Postgresql.FromField where
 
 import Data.Attoparsec.ByteString.Char8 qualified
@@ -15,7 +16,6 @@ import Data.Text.Encoding.Error
 import Data.Time
 import Data.Word
 import Database.PostgreSQL.LibPQ
-import Database.Prepare.Postgresql.PgType
 import Database.Prepare.Postgresql.Time.Parser qualified
 import GHC.TypeLits
 import Text.Read
@@ -23,10 +23,10 @@ import Text.Read
 data ParserError = Utf8Exception UnicodeException | Unimplemented | NoParse
   deriving (Show)
 
-class FromField (pgTypeName::Symbol) where
-  fromField :: Proxy pgTypeName -> Format -> ByteString -> Either ParserError (PgType pgTypeName)
+class FromField (pgTypeName::Symbol) ty where
+  fromField :: Proxy pgTypeName -> Format -> ByteString -> Either ParserError ty
 
-instance FromField "timestamptz" where
+instance FromField "timestamptz" UTCTime where
   fromField :: Proxy "timestamptz" -> Format -> ByteString -> Either ParserError UTCTime
   fromField _ Database.PostgreSQL.LibPQ.Text bs =
       case Data.Attoparsec.ByteString.Char8.parseOnly Database.Prepare.Postgresql.Time.Parser.utcTime bs of
@@ -34,7 +34,7 @@ instance FromField "timestamptz" where
         Left _ -> Left NoParse
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "int8" where
+instance FromField "int8" Int64 where
   fromField :: Proxy "int8" -> Format -> ByteString -> Either ParserError Int64
   fromField _ Database.PostgreSQL.LibPQ.Text bs = case decodeUtf8' bs of
       Left err -> Left $ Utf8Exception err
@@ -43,7 +43,7 @@ instance FromField "int8" where
          Nothing -> Left NoParse
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "int4" where
+instance FromField "int4" Int32 where
   fromField :: Proxy "int4" -> Format -> ByteString -> Either ParserError Int32
   fromField _ Database.PostgreSQL.LibPQ.Text bs = case decodeUtf8' bs of
       Left err -> Left $ Utf8Exception err
@@ -52,19 +52,19 @@ instance FromField "int4" where
          Nothing -> Left NoParse
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "text" where
+instance FromField "text" Data.Text.Text where
   fromField :: Proxy "text" -> Format -> ByteString -> Either ParserError Data.Text.Text
   fromField _ Database.PostgreSQL.LibPQ.Text bs = first Utf8Exception $ decodeUtf8' bs
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "bool" where
+instance FromField "bool" Bool where
   fromField _ Database.PostgreSQL.LibPQ.Text bs = case bs of
     "t" -> Right True
     "f" -> Right False
     _ -> Left NoParse
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "bytea" where
+instance FromField "bytea" ByteString where
   fromField _ Database.PostgreSQL.LibPQ.Text bs = case BS.stripPrefix "\\x" bs of
     Just hexBs -> decodeHex hexBs
     Nothing -> Left NoParse
@@ -85,11 +85,11 @@ instance FromField "bytea" where
         | otherwise = Nothing
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "varchar" where
+instance FromField "varchar" Data.Text.Text where
   fromField _ Database.PostgreSQL.LibPQ.Text bs = first Utf8Exception $ decodeUtf8' bs
   fromField _ Database.PostgreSQL.LibPQ.Binary _bs = Left Unimplemented
 
-instance FromField "float8" where
+instance FromField "float8" Double where
   fromField _ Database.PostgreSQL.LibPQ.Text bs = case decodeUtf8' bs of
       Left err -> Left $ Utf8Exception err
       Right txt -> case readMaybe (Data.Text.unpack txt) of
