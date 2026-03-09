@@ -69,14 +69,13 @@ instance FromField "bytea" ByteString where
     Just hexBs -> decodeHex hexBs
     Nothing -> Left NoParse
     where
-      decodeHex hex
-        | BS.null hex = Right BS.empty
+      decodeHex hex = BS.pack <$> go hex
+      go hex
+        | BS.null hex = Right []
         | BS.length hex < 2 = Left NoParse
         | otherwise = case (,) <$> fromHexNibble (BS.index hex 0) <*> fromHexNibble (BS.index hex 1) of
             Nothing -> Left NoParse
-            Just (hi, lo) -> case decodeHex (BS.drop 2 hex) of
-              Left e -> Left e
-              Right rest -> Right (BS.cons (shiftL hi 4 .|. lo) rest)
+            Just (hi, lo) -> (shiftL hi 4 .|. lo :) <$> go (BS.drop 2 hex)
       fromHexNibble :: Word8 -> Maybe Word8
       fromHexNibble w
         | w >= 0x30 && w <= 0x39 = Just (w - 0x30)

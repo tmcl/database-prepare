@@ -4,6 +4,10 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
     flake-utils.url = "github:numtide/flake-utils";
+    sqlite-simple = {
+      url = "github:tmcl/sqlite-simple/query-named-with";
+      flake = false;
+    };
   };
 
   outputs =
@@ -19,9 +23,9 @@
           self: super: {
             database-prepare-sqlite = database-prepare-sqlite self;
             database-prepare-postgresql = database-prepare-postgresql self;
-       sqlite-simple =   final.lib.pipe super.sqlite-simple [
-          (final.haskell.lib.compose.appendPatch ./tmp/queryNamedWith2.patch)
-        ];
+            sqlite-simple =   super.sqlite-simple.overrideAttrs {
+              src = inputs.sqlite-simple;
+            } ;
        tmp-postgres =   final.lib.pipe (self.callCabal2nix "tmp-postgres" (prev.fetchFromGitHub {
           owner = "jfischoff";
           repo = "tmp-postgres";
