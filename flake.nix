@@ -5,7 +5,7 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable-small";
     flake-utils.url = "github:numtide/flake-utils";
     sqlite-simple = {
-      url = "github:tmcl/sqlite-simple/query-named-with";
+      url = "github:nurpax/sqlite-simple/master";
       flake = false;
     };
   };

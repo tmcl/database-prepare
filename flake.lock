@@ -20,11 +20,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1772963539,
-        "narHash": "sha256-9jVDGZnvCckTGdYT53d/EfznygLskyLQXYwJLKMPsZs=",
+        "lastModified": 1774321912,
+        "narHash": "sha256-Nna0UkHU2xmhyx0VAel4DDdwpAlA70ZgzAtOD4m3Pc8=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "9dcb002ca1690658be4a04645215baea8b95f31d",
+        "rev": "b0d3faa43b2bd4cc22fdf98ee00cac4f2f47ac8a",
         "type": "github"
       },
       "original": {
@@ -44,16 +44,16 @@
     "sqlite-simple": {
       "flake": false,
       "locked": {
-        "lastModified": 1772991573,
-        "narHash": "sha256-ZiD5akvTA0owOC3eQKyKYkBh58743e/GLCQl+WMLE6Y=",
-        "owner": "tmcl",
+        "lastModified": 1773783910,
+        "narHash": "sha256-38fHmTM8Y3w//R/Tc7mK38zXc/9h/7kbeVl0+WwXyI4=",
+        "owner": "nurpax",
         "repo": "sqlite-simple",
-        "rev": "bc5641c5f72585def61358ccba27e60ddddd5370",
+        "rev": "2b7b708036ea8e9cf0446b0ab11d530db5e25e8b",
         "type": "github"
       },
       "original": {
-        "owner": "tmcl",
-        "ref": "query-named-with",
+        "owner": "nurpax",
+        "ref": "master",
         "repo": "sqlite-simple",
         "type": "github"
       }
